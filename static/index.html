@@ -1,0 +1,1322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>aide</title>
+<script>
+  const _t = localStorage.getItem('aide-theme');
+  if (_t) document.documentElement.dataset.theme = _t;
+  const _a = localStorage.getItem('aide-accent');
+  if (_a) document.documentElement.style.setProperty('--accent', _a);
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css">
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#0a0a0a">
+<link rel="apple-touch-icon" href="/static/icons/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="aide">
+</head>
+<body class="preboot">
+
+<div class="app">
+
+  <!-- sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-head">
+      <span class="brand sidebar-brand" id="brand-home" title="back to aide">aide</span>
+      <button class="new-btn" id="new-chat-btn">+ new chat</button>
+    </div>
+
+    <div class="search-wrap">
+      <input class="search-input" id="session-search" type="text" placeholder="search chats...">
+    </div>
+
+    <div class="session-list" id="session-list">
+      <div class="empty-sessions">no chats yet</div>
+    </div>
+
+    <nav class="sidebar-nav">
+      <!-- aide is gemini-style: chat + its tools. switch apps from the aide logo. -->
+      <div class="nav-item" data-view="chat">aide</div>
+      <div class="nav-sep"></div>
+      <div class="nav-more-toggle" id="nav-more-toggle">tools <span id="nav-more-arrow">▾</span></div>
+      <div class="nav-more-items" id="nav-more-items">
+        <div class="nav-item" data-view="compare">compare</div>
+        <div class="nav-item" data-view="gallery">gallery</div>
+        <div class="nav-item" data-view="brain">brain</div>
+        <div class="nav-item" data-view="models">models</div>
+        <div class="nav-item" data-view="reminders">reminders</div>
+      </div>
+      <div class="nav-sep"></div>
+      <div class="nav-item" data-view="settings">settings</div>
+    </nav>
+  </aside>
+
+  <!-- main -->
+  <main class="main">
+    <div class="topbar">
+      <div class="topbar-left">
+        <button class="icon-btn" id="sidebar-toggle-btn" title="toggle sidebar (Ctrl+B)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+        </button>
+        <div class="app-crumb" id="app-crumb">aide</div>
+        <div class="ai-top-controls" id="ai-top-controls">
+          <button class="model-btn" id="model-btn">
+            <span class="live-dot" id="live-dot"></span>
+            <span id="model-label">no model</span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+          <button class="model-btn" id="persona-btn" title="persona" style="display:none">
+            <span id="persona-label">persona</span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="topbar-right">
+        <span id="session-token-count" style="display:none;font-size:0.65rem;color:var(--muted)"></span>
+        <button class="icon-btn" id="session-actions-btn" title="export / share" style="display:none">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        </button>
+        <button class="icon-btn" id="topbar-settings-btn" title="settings">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2a2 2 0 1 1-4 0V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1A2 2 0 1 1 4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.6-1H3a2 2 0 1 1 0-4h.2a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1A2 2 0 1 1 7.2 4.2l.1.1a1.7 1.7 0 0 0 1.9.3 1.7 1.7 0 0 0 1-1.6V3a2 2 0 1 1 4 0v.2a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1A2 2 0 1 1 20 7.2l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2a2 2 0 1 1 0 4h-.2a1.7 1.7 0 0 0-1.8 1z"/></svg>
+        </button>
+        <button class="icon-btn" id="theme-btn" title="toggle theme">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- connectivity warning — shows when a chat can't reach the endpoint -->
+    <div class="conn-banner" id="conn-banner" style="display:none">
+      <span class="conn-banner-msg" id="conn-banner-msg"></span>
+      <button class="conn-banner-x" id="conn-banner-x" title="dismiss">×</button>
+    </div>
+
+    <!-- ── home / launcher (landing) ── -->
+    <div class="page-view home-view" id="home-view" style="display:none">
+      <div class="home-inner">
+        <div class="home-head">
+          <div class="home-brand">aide</div>
+          <div class="home-greeting" id="home-greeting"></div>
+          <div class="home-head-actions">
+            <button class="btn" id="home-settings-btn" title="aide settings">settings</button>
+            <button class="btn home-edit-btn" id="home-edit-btn" title="rearrange & hide tiles">customize</button>
+          </div>
+        </div>
+        <div class="home-today" id="home-today" style="display:none"></div>
+        <div class="home-capture" id="home-capture">
+          <div class="hc-modes">
+            <button class="hc-mode active" data-mode="note">note</button>
+            <button class="hc-mode" data-mode="task">task</button>
+          </div>
+          <input type="text" id="hc-input" class="hc-input" placeholder="capture a note…" spellcheck="true" autocomplete="off">
+          <button class="btn primary hc-save" id="hc-save">save</button>
+        </div>
+        <div class="home-grid" id="home-grid"></div>
+        <div class="home-foot">
+          <span class="live-dot"></span>
+          <span id="home-clock"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── chat view (default) ── -->
+    <div class="chat" id="chat">
+      <div class="welcome" id="welcome" style="display:none">
+        <div class="welcome-greeting" id="welcome-greeting"></div>
+      </div>
+      <div class="messages" id="messages" style="display:none"></div>
+    </div>
+
+    <div class="page-view" id="models-view" style="display:none">
+      <div class="page-view-head">
+        <span class="page-view-title">models</span>
+        <button class="btn" id="models-refresh-btn">refresh</button>
+      </div>
+      <div class="page-view-body">
+        <input type="text" id="sidebar-model-search" class="settings-input" placeholder="filter models..." style="width:100%;margin-bottom:0.65rem">
+        <div class="sidebar-model-list" id="sidebar-model-list"></div>
+      </div>
+    </div>
+
+    <div class="page-view" id="brain-view" style="display:none">
+      <div class="page-view-head">
+        <span class="page-view-title">brain</span>
+        <button class="btn" id="brain-refresh-btn">refresh</button>
+      </div>
+      <div class="page-view-body">
+        <div class="brain-grid" id="brain-stats"></div>
+        <div class="brain-section">
+          <div class="brain-section-title">current context</div>
+          <div class="brain-context" id="brain-context"></div>
+        </div>
+        <div class="brain-section">
+          <div class="brain-section-title">recent memories</div>
+          <div id="brain-memories"></div>
+          <button class="btn" id="brain-open-memory-btn" style="margin-top:0.65rem">open memory</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- docs scratchpad view -->
+    <div class="page-view" id="notes-view" style="display:none">
+      <div class="page-view-head">
+        <span class="page-view-title">docs</span>
+        <button class="btn primary" id="note-new-btn">+ new</button>
+      </div>
+      <div class="page-view-body" id="notes-list"></div>
+    </div>
+
+    <!-- ── tasks view ── -->
+    <div class="page-view" id="tasks-view" style="display:none">
+      <div class="page-view-head">
+        <span class="page-view-title">tasks</span>
+        <div class="tasks-tabs">
+          <button class="tasks-tab active" data-tab="active">active</button>
+          <button class="tasks-tab" data-tab="done">history</button>
+        </div>
+      </div>
+      <div class="page-view-body" id="tasks-list"></div>
+      <div class="page-view-footer">
+        <input type="text" id="task-add-input" placeholder="add a task...">
+        <button class="btn primary" id="task-add-btn">add</button>
+      </div>
+    </div>
+
+    <!-- ── calendar view ── -->
+    <div class="page-view" id="calendar-view" style="display:none">
+      <div class="page-view-head" style="gap:0.5rem">
+        <div class="cal-nav">
+          <button class="btn" id="cal-prev" title="previous">‹</button>
+          <button class="btn" id="cal-today">today</button>
+          <button class="btn" id="cal-next" title="next">›</button>
+        </div>
+        <span id="cal-month-label" class="cal-month-title"></span>
+        <div class="cal-view-toggle" style="margin-left:auto">
+          <button class="btn cal-view-btn" data-view="month">month</button>
+          <button class="btn cal-view-btn" data-view="week">week</button>
+          <button class="btn cal-view-btn" data-view="day">day</button>
+        </div>
+        <button class="btn" id="cal-sync-btn" title="CalDAV sync">sync</button>
+        <button class="btn primary" id="cal-new-btn">+ event</button>
+      </div>
+      <div class="page-view-body" id="calendar-list"></div>
+    </div>
+
+    <!-- aide gallery view (AI image generation — lives inside aide) -->
+    <div class="page-view" id="gallery-view" style="display:none">
+      <div class="page-view-head">
+        <span class="page-view-title">gallery</span>
+        <input type="file" id="gallery-file-input" accept="image/*" style="display:none">
+        <button class="btn primary" id="gallery-upload-btn">+ upload</button>
+      </div>
+      <div class="page-view-body">
+        <input type="text" id="gallery-prompt-input" placeholder="prompt / caption (optional)" style="width:100%;background:none;border:none;border-bottom:1px solid var(--faint);color:var(--text);font:inherit;font-size:0.8rem;padding:0.3rem 0;outline:none;margin-bottom:1rem;transition:border-color 0.2s" onfocus="this.style.borderColor='var(--muted)'" onblur="this.style.borderColor='var(--faint)'">
+        <div class="gallery-grid" id="gallery-grid"></div>
+      </div>
+    </div>
+
+
+    <!-- ── reminders view ── -->
+    <div class="page-view" id="reminders-view" style="display:none">
+      <div class="page-view-head">
+        <span class="page-view-title">reminders</span>
+        <button class="btn primary" id="push-enable-btn" style="margin-left:auto;font-size:0.72rem">enable notifications</button>
+      </div>
+      <div class="page-view-body">
+        <div id="reminder-list" style="margin-bottom:0.75rem"></div>
+        <div class="reminder-add-form">
+          <input type="text" id="reminder-text" class="settings-input" placeholder="what to remind / message to send..." style="flex:1">
+          <div class="date-input" id="reminder-time" data-type="datetime" data-ph="when" style="width:200px"></div>
+          <div id="reminder-type-select" class="settings-input custom-select" data-value="reminder" data-options="reminder|reminder;message|send message to AI" style="width:auto;min-width:150px"></div>
+          <button class="btn primary" id="reminder-add-btn">set</button>
+        </div>
+        <div style="font-size:0.7rem;color:var(--muted);margin-top:0.5rem">
+          tip: use <code>/remind in 2h check deployment</code> or <code>/send at 3pm summarize my day</code> from chat
+        </div>
+      </div>
+    </div>
+
+
+    <!-- ── subscriptions view ── -->
+    <div class="page-view" id="subs-view" style="display:none">
+      <div class="page-view-head">
+        <span class="page-view-title">subscriptions</span>
+        <span id="subs-summary" style="font-size:0.7rem;color:var(--muted);margin-left:auto"></span>
+      </div>
+      <div class="page-view-body" id="subs-list"></div>
+      <div class="page-view-footer" style="flex-wrap:wrap;gap:0.4rem">
+        <input type="text" id="sub-name" class="settings-input" placeholder="name (e.g. netflix)" style="flex:2;min-width:130px">
+        <input type="text" id="sub-price" class="settings-input" placeholder="price" style="width:75px" inputmode="decimal">
+        <div id="sub-cycle" class="settings-input custom-select" data-value="monthly" data-options="weekly|weekly;monthly|monthly;quarterly|quarterly;yearly|yearly;custom|custom days" style="width:auto;min-width:110px"></div>
+        <input type="text" id="sub-cycle-days" class="settings-input" placeholder="days" style="width:60px;display:none" inputmode="numeric">
+        <div class="date-input" id="sub-due" data-type="date" data-ph="next due" style="width:135px"></div>
+        <input type="text" id="sub-category" class="settings-input" placeholder="category" style="width:105px">
+        <button class="btn primary" id="sub-add-btn">add</button>
+      </div>
+    </div>
+
+
+    <!-- ── days: countdowns & days-since ── -->
+    <div class="page-view" id="days-view" style="display:none">
+      <div class="page-view-head">
+        <span class="page-view-title">days</span>
+        <span id="days-summary" style="font-size:0.7rem;color:var(--muted);margin-left:auto"></span>
+      </div>
+      <div class="page-view-body">
+        <div id="days-grid" class="days-grid"></div>
+      </div>
+      <div class="page-view-footer" style="flex-wrap:wrap;gap:0.4rem">
+        <input type="text" id="day-name" class="settings-input" placeholder="event (e.g. trip to japan, quit smoking)" style="flex:2;min-width:170px">
+        <div class="date-input" id="day-date" data-type="date" data-ph="date" style="width:135px"></div>
+        <div id="day-repeat" class="settings-input custom-select" data-value="none" data-options="none|one-time;yearly|every year;monthly|every month" style="width:auto;min-width:115px"></div>
+        <input type="text" id="day-category" class="settings-input" placeholder="category" style="width:105px">
+        <button class="btn primary" id="day-add-btn">add</button>
+      </div>
+    </div>
+
+
+    <!-- docs: markdown files on disk -->
+    <div class="page-view" id="wiki-view" style="display:none">
+      <div class="wiki-tree-panel">
+        <div class="page-view-head docs-rail-head">
+          <span class="page-view-title">docs</span>
+          <div class="docs-rail-actions">
+            <button class="btn" id="wiki-today-btn" title="today's daily doc">today</button>
+            <button class="btn" id="wiki-graph-btn" title="graph view">graph</button>
+            <button class="btn" id="wiki-sort-btn" title="sort: a–z / recently modified">a–z</button>
+            <button class="btn" id="wiki-tmpl-btn" title="new from template">tmpl</button>
+            <button class="btn" id="wiki-import-btn" title="import .md / .txt / .docx / .html / .pdf">import</button>
+            <button class="btn" id="wiki-folder-btn" title="new folder">+dir</button>
+            <button class="btn primary docs-rail-new" id="wiki-new-btn">+doc</button>
+            <input type="file" id="wiki-import-input" accept=".md,.markdown,.txt,.docx,.html,.htm,.pdf" style="display:none">
+          </div>
+        </div>
+        <input type="text" id="wiki-search" class="settings-input docs-search" placeholder="search docs...">
+        <div id="wiki-tags" class="wiki-tags"></div>
+        <div id="wiki-tree" class="wiki-tree"></div>
+      </div>
+      <div class="wiki-main">
+        <div class="page-view-head docs-editor-head">
+          <button class="icon-btn docs-tree-toggle" id="wiki-tree-toggle" title="show / hide files (fullscreen)" aria-label="show or hide files">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg>
+          </button>
+          <span id="wiki-current" class="wiki-current">no doc open</span>
+          <span id="wiki-stats" class="wiki-stats" style="margin-left:auto"></span>
+          <span id="wiki-save-status" style="font-size:0.66rem;color:var(--muted)"></span>
+          <button class="btn" id="wiki-mode-toggle" title="cycle live / source / preview">live</button>
+          <button class="btn" id="wiki-ai-toggle" title="ask AI to edit">ai</button>
+          <button class="btn" id="wiki-help-btn" title="markdown guide">guide</button>
+          <button class="btn" id="wiki-outline-btn">outline</button>
+          <button class="btn" id="wiki-todos-btn" title="AI-extract action items into tasks">todos</button>
+          <button class="btn" id="wiki-taskroll-btn" title="all - [ ] tasks across your docs">tasks</button>
+          <button class="btn" id="wiki-history-btn" title="version history">history</button>
+          <button class="btn" id="wiki-export-btn" title="export this doc">export ▾</button>
+          <button class="btn danger" id="wiki-delete-btn">delete</button>
+        </div>
+        <div id="wiki-outline" class="wiki-outline" style="display:none"></div>
+        <div id="wiki-history" class="wiki-outline" style="display:none"></div>
+        <div id="wiki-taskroll" class="wiki-outline wiki-taskroll" style="display:none"></div>
+        <div class="wiki-empty-state" id="wiki-empty-state">
+          <div class="we-card">
+            <svg class="we-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/></svg>
+            <div class="we-title">docs</div>
+            <div class="we-sub">markdown notes — linked with [[wikilinks]], with graphs, math, and one-click formatting.</div>
+            <div class="we-actions">
+              <button class="btn primary" id="wiki-empty-new">+ new doc</button>
+              <button class="btn" id="wiki-empty-today">today's note</button>
+              <button class="btn" id="wiki-empty-guide">markdown guide</button>
+            </div>
+            <div class="we-recent" id="wiki-empty-recent"></div>
+          </div>
+        </div>
+        <div id="docs-toolbar" class="docs-toolbar">
+          <button class="dt-btn" data-fmt="h1" title="heading 1">H1</button>
+          <button class="dt-btn" data-fmt="h2" title="heading 2">H2</button>
+          <button class="dt-btn" data-fmt="h3" title="heading 3">H3</button>
+          <span class="dt-sep"></span>
+          <button class="dt-btn" data-fmt="bold" title="bold (Ctrl+B)"><b>B</b></button>
+          <button class="dt-btn" data-fmt="italic" title="italic (Ctrl+I)"><i>I</i></button>
+          <button class="dt-btn" data-fmt="strike" title="strikethrough"><span style="text-decoration:line-through">S</span></button>
+          <button class="dt-btn" data-fmt="highlight" title="highlight (Ctrl+Shift+H)"><span class="dt-hl">H</span></button>
+          <button class="dt-btn" id="dt-color-btn" title="text color"><span class="dt-color-a">A</span></button>
+          <button class="dt-btn" data-fmt="code" title="inline code (Ctrl+E)">&lt;/&gt;</button>
+          <span class="dt-sep"></span>
+          <button class="dt-btn" data-fmt="bullet" title="bullet list">•</button>
+          <button class="dt-btn" data-fmt="olist" title="numbered list">1.</button>
+          <button class="dt-btn" data-fmt="check" title="checklist">☑</button>
+          <button class="dt-btn" data-fmt="quote" title="quote">&ldquo;</button>
+          <span class="dt-sep"></span>
+          <button class="dt-btn dt-wide" data-fmt="link" title="link (Ctrl+K)">link</button>
+          <button class="dt-btn dt-wide" data-fmt="image" title="image">img</button>
+          <button class="dt-btn dt-wide" data-fmt="wiki" title="link another doc">[[ ]]</button>
+          <button class="dt-btn dt-wide" data-fmt="table" title="table">table</button>
+          <button class="dt-btn dt-wide" data-fmt="codeblock" title="code block">code</button>
+          <button class="dt-btn dt-wide" data-fmt="callout" title="callout">callout</button>
+          <button class="dt-btn" data-fmt="hr" title="divider">—</button>
+        </div>
+        <div class="wiki-edit-wrap">
+          <div id="wiki-live" class="wiki-live"></div>
+          <textarea id="wiki-source" class="wiki-source" spellcheck="true" placeholder="raw markdown — [[link]] another doc, # for a heading."></textarea>
+          <div class="wiki-preview" id="wiki-preview"></div>
+        </div>
+        <div class="wiki-backlinks" id="wiki-backlinks"></div>
+        <div class="doc-ai-bar">
+          <input type="text" id="wiki-ai-input" placeholder="tell the AI what to change (e.g. 'summarize', 'fix grammar', 'expand the intro')...">
+          <button class="btn primary" id="wiki-ai-send">ask</button>
+        </div>
+      </div>
+      <div id="wiki-autocomplete" class="wiki-autocomplete" style="display:none"></div>
+      <div id="wiki-graph" class="wiki-graph" style="display:none">
+        <div class="wiki-graph-head"><span>graph</span><button class="icon-btn" id="wiki-graph-close">×</button></div>
+        <svg id="wiki-graph-svg" class="wiki-graph-svg"></svg>
+      </div>
+      <div id="wiki-help" class="wiki-help" style="display:none">
+        <div class="wiki-help-head"><span>markdown guide</span><button class="icon-btn" id="wiki-help-close">×</button></div>
+        <div class="wiki-help-body">
+          <div class="wiki-help-row"><code># H1  ## H2  ### H3</code><span>headings</span></div>
+          <div class="wiki-help-row"><code>**bold**</code><span>bold</span></div>
+          <div class="wiki-help-row"><code>*italic*</code><span>italic</span></div>
+          <div class="wiki-help-row"><code>~~strike~~</code><span>strikethrough</span></div>
+          <div class="wiki-help-row"><code>==highlight==</code><span>highlight</span></div>
+          <div class="wiki-help-row"><code>{color:red}text{/color}</code><span>font color (name or #hex)</span></div>
+          <div class="wiki-help-row"><code>`code`</code><span>inline code</span></div>
+          <div class="wiki-help-row"><code>```lang … ```</code><span>code block (run js/py/html)</span></div>
+          <div class="wiki-help-row"><code>&gt; quote</code><span>blockquote</span></div>
+          <div class="wiki-help-row"><code>- item</code><span>bullet list</span></div>
+          <div class="wiki-help-row"><code>1. item</code><span>numbered list</span></div>
+          <div class="wiki-help-row"><code>- [ ] todo · - [x] done</code><span>task list</span></div>
+          <div class="wiki-help-row"><code>[text](url)</code><span>link</span></div>
+          <div class="wiki-help-row"><code>![alt](url)</code><span>image</span></div>
+          <div class="wiki-help-row"><code>[[doc]] · [[doc|alias]]</code><span>link another doc</span></div>
+          <div class="wiki-help-row"><code>![[doc]] · ![[pic.png]]</code><span>embed a doc or image</span></div>
+          <div class="wiki-help-row"><code>#tag</code><span>tag (click to filter)</span></div>
+          <div class="wiki-help-row"><code>&gt; [!note] title</code><span>callout (note · tip · warning · danger)</span></div>
+          <div class="wiki-help-row"><code>| a | b | · |---|---|</code><span>table (header + separator row)</span></div>
+          <div class="wiki-help-row"><code>---</code><span>divider</span></div>
+          <div class="wiki-help-row"><code>--- &#10; key: value &#10; ---</code><span>frontmatter (top of doc)</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── compare view ── -->
+    <div class="page-view compare-layout" id="compare-view" style="display:none">
+      <!-- left sidebar: model picker + prompt -->
+      <div class="compare-sidebar">
+        <div class="page-view-head" style="padding:0.55rem 0.75rem">
+          <span class="page-view-title" style="font-size:0.8rem">compare</span>
+        </div>
+        <div style="padding:0 0.75rem;flex:1;overflow-y:auto">
+          <div style="font-size:0.68rem;color:var(--muted);margin-bottom:0.4rem;text-transform:lowercase;letter-spacing:0.04em">select models</div>
+          <div id="compare-model-picker"></div>
+        </div>
+        <div style="padding:0.5rem 0.75rem;border-top:1px solid var(--faint);flex-shrink:0">
+          <textarea id="compare-input" class="settings-input" placeholder="enter prompt..." rows="3" style="width:100%;resize:vertical;margin-bottom:0.4rem"></textarea>
+          <button class="btn primary" id="compare-send-btn" style="width:100%">compare</button>
+        </div>
+      </div>
+      <!-- right: output grid -->
+      <div class="compare-grid" id="compare-grid"></div>
+    </div>
+
+    <!-- ── vault view ── -->
+    <div class="page-view" id="vault-view" style="display:none">
+      <div class="page-view-head">
+        <span class="page-view-title">secrets</span>
+        <button class="btn" id="vault-lock-btn" style="display:none">lock</button>
+      </div>
+      <div id="vault-locked" class="vault-lock-screen">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="opacity:0.4">
+          <rect x="4" y="10" width="16" height="10" rx="2"></rect>
+          <path d="M8 10V7a4 4 0 0 1 8 0v3"></path>
+        </svg>
+        <span>enter master password to unlock</span>
+        <input type="password" id="vault-pw-input" class="settings-input" placeholder="master password" style="width:220px;text-align:center">
+        <button class="btn primary" id="vault-unlock-btn">unlock</button>
+      </div>
+      <div id="vault-unlocked" style="display:none;flex-direction:column;flex:1;overflow:hidden">
+        <div class="page-view-body" id="vault-entry-list"></div>
+      </div>
+      <div class="page-view-footer" id="vault-add-bar" style="display:none;flex-wrap:wrap">
+        <input type="text" id="vault-new-name" class="settings-input" placeholder="name" style="flex:1;min-width:90px">
+        <div id="vault-new-cat" class="settings-input custom-select" style="flex:1;min-width:100px"></div>
+        <input type="text" id="vault-new-cat-custom" class="settings-input" placeholder="new category" style="flex:1;min-width:100px;display:none">
+        <input type="text" id="vault-new-username" class="settings-input" placeholder="username" style="flex:1;min-width:100px;display:none">
+        <input type="password" id="vault-new-value" class="settings-input" placeholder="value / password" style="flex:2;min-width:120px">
+        <button class="btn primary" id="vault-add-btn">add</button>
+      </div>
+    </div>
+
+    <!-- ── contacts view ── -->
+    <div class="page-view" id="contacts-view" style="display:none">
+      <div class="page-view-head">
+        <span class="page-view-title">contacts</span>
+        <input type="text" id="contacts-search" class="settings-input" placeholder="search..." style="width:160px">
+      </div>
+      <div class="page-view-body" id="contacts-list"></div>
+      <div class="page-view-footer">
+        <input type="text" id="contact-name" class="settings-input" placeholder="name" style="flex:1;min-width:80px">
+        <input type="text" id="contact-email" class="settings-input" placeholder="email" style="flex:1;min-width:100px">
+        <input type="text" id="contact-phone" class="settings-input" placeholder="phone" style="width:90px">
+        <button class="btn primary" id="contact-add-btn">add</button>
+      </div>
+    </div>
+
+    <!-- ── files view ── -->
+    <div class="page-view" id="files-view" style="display:none">
+      <div class="page-view-head">
+        <span class="page-view-title">files</span>
+        <div class="files-actions">
+          <button class="btn" id="files-up-btn" title="up one folder">↑ up</button>
+          <button class="btn" id="files-mkdir-btn">+ folder</button>
+          <button class="btn" id="files-upload-btn">upload</button>
+          <input type="file" id="files-upload-input" multiple hidden>
+        </div>
+      </div>
+      <div class="files-breadcrumb" id="files-breadcrumb"></div>
+      <div class="page-view-body">
+        <div class="files-list" id="files-list"></div>
+      </div>
+    </div>
+
+    <!-- ── mail view ── -->
+    <div class="page-view" id="mail-view" style="display:none">
+      <div class="page-view-head mail-head">
+        <div class="mail-tabs" id="mail-tabs">
+          <button class="mail-tab active" data-filter="inbox">inbox</button>
+          <button class="mail-tab" data-filter="unread">unread</button>
+          <button class="mail-tab" data-filter="sent">sent</button>
+        </div>
+        <div id="mail-account" class="settings-input custom-select mail-account-select"></div>
+        <div class="mail-head-actions">
+          <button class="btn" id="mail-refresh-btn">refresh</button>
+          <button class="btn primary" id="mail-compose-btn">compose</button>
+          <button class="btn" id="mail-accounts-btn" title="accounts">accounts</button>
+        </div>
+      </div>
+      <div class="mail-layout">
+        <div class="mail-list" id="mail-list"></div>
+        <div class="mail-main" id="mail-main"></div>
+      </div>
+    </div>
+
+    <!-- gallery view -->
+    <div class="page-view" id="photos-view" style="display:none">
+      <div class="page-view-head" style="gap:0.4rem">
+        <span class="page-view-title">gallery</span>
+        <div id="photos-album" class="settings-input custom-select" style="font-size:0.72rem;width:auto;max-width:180px"></div>
+        <button class="btn" id="photos-newalbum-btn" style="font-size:0.72rem">+ album</button>
+        <input type="file" id="photos-upload-input" accept="image/*" multiple hidden>
+        <button class="btn primary" id="photos-upload-btn" style="font-size:0.72rem;margin-left:auto">upload</button>
+      </div>
+      <div class="page-view-body"><div class="photos-grid" id="photos-grid"></div></div>
+    </div>
+
+    <!-- ── composer (hidden in memory view) ── -->
+    <div class="composer-outer" id="composer-outer">
+      <div id="attachment-chips" style="display:none;flex-wrap:wrap;gap:0.3rem;padding:0.3rem 0.75rem 0"></div>
+      <div id="attachment-preview" class="attach-preview"></div>
+      <div class="composer-box">
+        <div class="shell-panel" id="shell-panel" hidden>
+          <div class="shell-panel-head">
+            <span>shell command</span>
+            <button class="icon-btn" id="shell-panel-close" title="close shell input">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </div>
+          <textarea class="shell-input" id="shell-input" rows="3" spellcheck="false" placeholder="enter shell command..."></textarea>
+          <div class="shell-panel-foot">
+            <span>Ctrl+Enter sends</span>
+            <button class="btn primary" id="shell-send-btn">send shell</button>
+          </div>
+        </div>
+        <textarea class="composer-ta" id="composer-ta" placeholder="message..." rows="1"
+          oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,220)+'px'"></textarea>
+        <canvas id="mic-wave" class="mic-wave" aria-hidden="true"></canvas>
+        <div class="composer-bar">
+          <div class="c-tools">
+            <button class="c-tool" id="attach-btn" title="attach files" aria-label="attach files">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+            </button>
+            <button class="c-tool" id="research-toggle-btn" title="research mode" aria-label="research mode">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            </button>
+            <button class="c-tool" id="shell-btn-tool" title="shell command" aria-label="shell command">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+            </button>
+            <button class="c-tool incognito-btn" id="incognito-btn" title="incognito mode" aria-pressed="false" aria-label="incognito mode">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
+            </button>
+            <button class="c-tool" id="more-tools-btn" title="more tools" aria-expanded="false">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg>
+            </button>
+          </div>
+          <div class="c-right">
+            <div class="mode-toggle" role="tablist" aria-label="response mode">
+              <button class="mode-btn" id="mode-agent" role="tab">agent</button>
+              <button class="mode-btn active" id="mode-chat" role="tab">chat</button>
+            </div>
+            <span class="c-divider" aria-hidden="true"></span>
+            <button class="c-tool mic-corner" id="mic-btn" title="voice input" aria-label="voice input">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+            </button>
+            <button class="stop-btn" id="stop-btn" aria-label="stop">■</button>
+            <button class="send-btn" id="send-btn" aria-label="send">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+            </button>
+          </div>
+        </div>
+        <div class="agent-bar" id="agent-bar">
+          <span class="agent-bar-label">mode</span>
+          <button class="perm-btn" id="perm-mode-btn" title="what the agent can do without asking">
+            <span class="perm-label">approve</span>
+            <svg class="perm-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+          <span class="agent-bar-sep" aria-hidden="true"></span>
+          <span class="agent-bar-label">effort</span>
+          <button class="perm-btn" id="effort-btn" title="how hard the agent works — more effort = more turns + deeper checks">
+            <span class="effort-label">medium</span>
+            <svg class="perm-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+    <!-- hidden file input for attachments -->
+    <input type="file" id="file-input-hidden" multiple style="display:none">
+
+  </main>
+
+  <!-- artifact panel -->
+  <div class="artifact-panel" id="artifact-panel">
+    <div class="artifact-panel-head">
+      <div class="artifact-panel-meta">
+        <span class="artifact-title"></span>
+        <span class="artifact-type-badge"></span>
+      </div>
+      <button class="icon-btn artifact-close" id="artifact-close-btn">×</button>
+    </div>
+    <div class="artifact-body" id="artifact-body"></div>
+  </div>
+
+</div>
+
+<!-- login screen -->
+<div class="login-screen" id="login-screen" style="display:none">
+  <div class="login-inner">
+    <div class="login-brand">aide <span class="login-sep">/ sign in</span></div>
+    <input type="password" id="login-pw" class="login-input" placeholder="password" autocomplete="current-password">
+    <button class="login-btn" id="login-submit">enter</button>
+  </div>
+</div>
+
+<!-- drop overlay -->
+<div class="drop-overlay" id="drop-overlay" style="display:none">
+  <span>drop files to attach</span>
+</div>
+
+<!-- search modal -->
+<div class="modal-overlay" id="search-modal" style="display:none">
+  <div class="modal-card search-card">
+    <div class="modal-search" style="padding:0.75rem 1rem">
+      <input type="text" id="search-input" placeholder="search everything..." style="width:100%;background:none;border:none;border-bottom:1px solid var(--faint);color:var(--text);font:inherit;font-size:0.9rem;padding:0.4rem 0;outline:none;transition:border-color 0.2s" onfocus="this.style.borderColor='var(--muted)'" onblur="this.style.borderColor='var(--faint)'">
+    </div>
+    <div class="modal-body" id="search-results" style="max-height:420px;overflow-y:auto"></div>
+  </div>
+</div>
+
+<!-- files preview -->
+<div class="modal-overlay" id="files-preview-modal" style="display:none">
+  <div class="modal-card files-preview-card">
+    <div class="files-preview-head">
+      <span class="files-preview-name" id="files-preview-name"></span>
+      <div class="files-preview-actions">
+        <a class="btn" id="files-preview-dl" href="#" download>download</a>
+        <button class="btn" id="files-preview-close">close</button>
+      </div>
+    </div>
+    <div class="files-preview-body" id="files-preview-body"></div>
+  </div>
+</div>
+
+<!-- photo lightbox -->
+<div class="modal-overlay" id="photos-lightbox" style="display:none">
+  <div class="photos-lightbox-inner">
+    <img class="photos-lightbox-img" id="photos-lightbox-img" src="" alt="">
+    <div class="photos-lightbox-side">
+      <div class="photos-lightbox-actions">
+        <button class="btn" id="photos-fav-btn">favorite</button>
+        <a class="btn" id="photos-dl-btn" href="#" download>download</a>
+        <button class="btn danger" id="photos-del-btn">delete</button>
+        <button class="btn" id="photos-close-btn">close</button>
+      </div>
+      <div class="photos-exif" id="photos-exif"></div>
+    </div>
+  </div>
+</div>
+
+<!-- toast container -->
+<div class="toast-container" id="toast-container"></div>
+
+<!-- context menu -->
+<div class="ctx-menu" id="ctx-menu" style="display:none"></div>
+
+<!-- model picker modal -->
+<div class="modal-overlay" id="model-modal" style="display:none">
+  <div class="modal-card model-modal-card">
+    <div class="modal-head">
+      <div class="mm-tabs">
+        <button class="mm-tab active" data-tab="models">models</button>
+        <button class="mm-tab" data-tab="endpoints">endpoints</button>
+      </div>
+      <button class="btn mm-refresh-all" id="mm-refresh-all" title="re-probe every endpoint for new models" style="margin-left:auto;margin-right:0.4rem">refresh</button>
+      <button class="modal-close" id="model-modal-close">×</button>
+    </div>
+
+    <!-- models tab -->
+    <div class="mm-panel" id="mm-panel-models">
+      <div class="modal-search">
+        <input type="text" id="model-search-input" placeholder="search models...">
+      </div>
+      <div class="modal-body" id="model-list"></div>
+    </div>
+
+    <!-- endpoints tab -->
+    <div class="mm-panel" id="mm-panel-endpoints" style="display:none">
+      <div class="mm-ep-list" id="mm-ep-list"></div>
+      <div class="mm-add-section">
+        <div class="mm-presets" id="mm-presets">
+          <span style="font-size:0.68rem;color:var(--muted);flex-shrink:0">quick add:</span>
+        </div>
+        <div class="mm-add-form">
+          <input type="text" id="ep-name" placeholder="name" style="width:120px">
+          <input type="text" id="ep-url" placeholder="base url" style="flex:1">
+          <input type="password" id="ep-key" placeholder="api key">
+          <button class="btn primary" id="ep-add-btn">add + probe</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- settings modal (multi-pane) -->
+<div class="modal-overlay" id="settings-modal" style="display:none">
+  <div class="s-modal">
+    <div class="s-header">
+      <span class="s-title">settings</span>
+      <button class="modal-close" id="settings-modal-close">×</button>
+    </div>
+    <div class="s-layout">
+
+      <!-- left nav -->
+      <nav class="s-nav">
+        <div class="s-nav-item active" data-pane="models">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+          models
+        </div>
+        <div class="s-nav-item" data-pane="ai">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>
+          ai defaults
+        </div>
+        <div class="s-nav-item" data-pane="memory">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/><path d="M3 12a9 3 0 0 0 18 0"/></svg>
+          memory
+        </div>
+        <div class="s-nav-item" data-pane="search">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+          search
+        </div>
+        <div class="s-nav-item" data-pane="appearance">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/></svg>
+          appearance
+        </div>
+        <div class="s-nav-item" data-pane="voice">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>
+          voice
+        </div>
+        <div class="s-nav-item" data-pane="personas">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          personas
+        </div>
+        <div class="s-nav-item" data-pane="templates">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+          templates
+        </div>
+        <div class="s-nav-item" data-pane="tools">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+          tools
+        </div>
+        <div class="s-nav-item" data-pane="developer">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+          developer
+        </div>
+        <div class="s-nav-item" data-pane="rules">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+          rules
+        </div>
+        <div class="s-nav-item" data-pane="backup">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          backup
+        </div>
+      </nav>
+
+      <!-- content area -->
+      <div class="s-content">
+
+        <!-- ── models pane ── -->
+        <div class="s-pane active" id="s-pane-models">
+          <div class="s-card">
+            <div class="s-card-head">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/></svg>
+              model endpoints
+            </div>
+            <div class="s-card-body">
+              <div id="s-ep-list" style="margin-bottom:0.75rem"></div>
+              <details id="s-ep-add-details">
+                <summary class="s-add-summary">+ add endpoint</summary>
+                <div class="s-ep-form">
+                  <div class="s-ep-presets">
+                    <button class="s-preset-btn" data-url="https://api.openai.com" data-name="OpenAI">OpenAI</button>
+                    <button class="s-preset-btn" data-url="https://api.anthropic.com" data-name="Anthropic">Anthropic</button>
+                    <button class="s-preset-btn" data-url="https://api.deepseek.com" data-name="DeepSeek">DeepSeek</button>
+                    <button class="s-preset-btn" data-url="https://api.moonshot.cn" data-name="Moonshot">Moonshot</button>
+                    <button class="s-preset-btn" data-url="https://api.groq.com/openai" data-name="Groq">Groq</button>
+                    <button class="s-preset-btn" data-url="https://generativelanguage.googleapis.com/v1beta/openai" data-name="Gemini">Gemini</button>
+                    <button class="s-preset-btn" data-url="https://api.x.ai" data-name="xAI (Grok)">xAI (Grok)</button>
+                    <button class="s-preset-btn" data-url="https://api.mistral.ai" data-name="Mistral">Mistral</button>
+                    <button class="s-preset-btn" data-url="https://api.perplexity.ai" data-name="Perplexity">Perplexity</button>
+                    <button class="s-preset-btn" data-url="https://openrouter.ai/api" data-name="OpenRouter">OpenRouter</button>
+                    <button class="s-preset-btn" data-url="https://api.together.xyz" data-name="Together">Together</button>
+                    <button class="s-preset-btn" data-url="https://api.fireworks.ai/inference" data-name="Fireworks">Fireworks</button>
+                    <button class="s-preset-btn" data-url="https://api.cohere.ai" data-name="Cohere">Cohere</button>
+                    <button class="s-preset-btn" data-url="http://localhost:11434" data-name="Ollama">Ollama</button>
+                  </div>
+                  <div class="s-field">
+                    <label>name</label>
+                    <input type="text" class="settings-input" id="s-ep-name" placeholder="e.g. DeepSeek">
+                  </div>
+                  <div class="s-field">
+                    <label>base url</label>
+                    <input type="text" class="settings-input" id="s-ep-url" placeholder="https://api.example.com">
+                  </div>
+                  <div class="s-field">
+                    <label>api key</label>
+                    <input type="password" class="settings-input" id="s-ep-key" placeholder="leave blank for local / Ollama">
+                  </div>
+                  <button class="btn primary" id="s-ep-add-btn" style="width:100%;margin-top:0.2rem">add + probe models</button>
+                  <div class="s-field" style="margin-top:0.5rem"><label>vision-capable models <span style="color:var(--muted);font-weight:400">(comma-separated, optional)</span></label><input type="text" class="settings-input" id="s-ep-vision" placeholder="e.g. gpt-4o, claude-3-5-sonnet-20241022" style="width:100%"></div>
+                </div>
+              </details>
+            </div>
+          </div>
+          <div class="s-card">
+            <div class="s-card-head">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/></svg>
+              local serving
+            </div>
+            <div class="s-card-body">
+              <div id="s-local-ollama" style="font-size:0.72rem;color:var(--muted);margin-bottom:0.45rem">checking Ollama...</div>
+              <div id="s-local-hw" style="font-size:0.72rem;color:var(--muted);margin-bottom:0.65rem"></div>
+              <div id="s-local-presets" class="settings-list"></div>
+              <div class="s-field" style="margin-top:0.65rem"><label>pull any model</label>
+                <div style="display:flex;gap:0.4rem">
+                  <input type="text" class="settings-input" id="s-local-custom" placeholder="e.g. qwen2.5:14b" style="flex:1">
+                  <button class="btn" id="s-local-pull-btn">pull</button>
+                </div>
+              </div>
+              <div style="display:flex;gap:0.4rem;margin-top:0.4rem;flex-wrap:wrap">
+                <button class="btn" id="s-local-refresh-btn">refresh</button>
+                <button class="btn" id="s-local-start-btn">start Ollama</button>
+              </div>
+            </div>
+          </div>
+          <div class="s-card">
+            <div class="s-card-head">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+              openai-compatible api
+            </div>
+            <div class="s-card-body" style="font-size:0.75rem;color:var(--muted)">
+              <div style="margin-bottom:0.3rem">base url: <code id="s-compat-url" style="color:var(--accent)">http://localhost:8001/v1</code></div>
+              <div>model id format: <code style="color:var(--accent)">EndpointName/model-id</code></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── ai defaults pane ── -->
+        <div class="s-pane" id="s-pane-ai">
+          <div class="s-card">
+            <div class="s-card-head">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83"/></svg>
+              chat defaults
+            </div>
+            <div class="s-card-body">
+              <div class="s-field">
+                <label>system prompt</label>
+                <textarea class="settings-textarea" id="settings-system-prompt" rows="4" placeholder="You are Aide, the AI assistant inside aide."></textarea>
+              </div>
+              <div class="s-field">
+                <label>context window (messages)</label>
+                <input type="number" class="settings-input" id="settings-context-limit" min="4" max="200" style="width:80px">
+              </div>
+            </div>
+          </div>
+          <div class="s-card">
+            <div class="s-card-head">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+              features
+            </div>
+            <div class="s-card-body" style="padding-top:0.2rem;padding-bottom:0.2rem">
+              <div class="s-toggle-row">
+                <div>
+                  <div class="s-toggle-label">streaming thinking</div>
+                  <div class="s-toggle-desc">show model reasoning blocks as they stream</div>
+                </div>
+                <div class="s-switch" id="s-thinking-toggle"></div>
+              </div>
+              <div class="s-toggle-row">
+                <div>
+                  <div class="s-toggle-label">artifacts</div>
+                  <div class="s-toggle-desc">render HTML, SVG and code in a side panel</div>
+                </div>
+                <div class="s-switch" id="s-artifacts-toggle"></div>
+              </div>
+              <div class="s-toggle-row">
+                <div>
+                  <div class="s-toggle-label">auto-compact context</div>
+                  <div class="s-toggle-desc">summarize old messages when context fills up</div>
+                </div>
+                <div class="s-switch" id="s-compact-toggle"></div>
+              </div>
+            </div>
+          </div>
+          <div style="text-align:right;margin-top:0.4rem">
+            <button class="btn primary" id="settings-save-btn">save</button>
+          </div>
+        </div>
+
+        <!-- ── memory pane (aide's long-term memory) ── -->
+        <div class="s-pane" id="s-pane-memory">
+          <div class="s-card">
+            <div class="s-card-head">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/><path d="M3 12a9 3 0 0 0 18 0"/></svg>
+              memory
+              <button class="btn" id="mem-extract-btn" style="margin-left:auto;font-size:0.68rem;padding:0.15rem 0.5rem">extract from chat</button>
+            </div>
+            <div class="s-card-body">
+              <input type="text" id="mem-search" class="settings-input" placeholder="search memories..." style="width:100%;margin-bottom:0.55rem">
+              <div id="mem-category-filter" class="mem-cat-filter"></div>
+              <div class="mem-view-list" id="memory-list"></div>
+              <div style="display:flex;gap:0.4rem;margin-top:0.6rem">
+                <input type="text" id="mem-add-input" class="settings-input" placeholder="add a memory..." style="flex:1">
+                <button class="btn mem-cat-cycle" id="mem-cat-cycle-btn" data-val="general">general</button>
+                <button class="btn primary" id="mem-add-btn">add</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── search pane ── -->
+        <div class="s-pane" id="s-pane-search">
+          <div class="s-card">
+            <div class="s-card-head">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+              web search
+            </div>
+            <div class="s-card-body">
+              <div class="s-field">
+                <label>primary provider</label>
+                <div style="display:flex;gap:0.4rem;align-items:center">
+                  <div class="settings-input custom-select" id="s-search-provider" style="flex:1" data-value="duckduckgo" data-options="duckduckgo|DuckDuckGo (free);tavily|Tavily;brave|Brave Search;searxng|SearXNG (self-hosted);google_pse|Google PSE;serper|Serper;disabled|disabled"></div>
+                  <button class="btn" id="s-search-test-btn" style="flex-shrink:0">test</button>
+                </div>
+              </div>
+              <div class="s-field" id="s-tavily-row" style="display:none">
+                <label>tavily api key</label>
+                <input type="password" class="settings-input" id="s-tavily-key" placeholder="tvly-..." style="width:100%">
+              </div>
+              <div class="s-field" id="s-brave-row" style="display:none">
+                <label>brave search api key</label>
+                <input type="password" class="settings-input" id="s-brave-key" placeholder="BSA..." style="width:100%">
+              </div>
+              <div class="s-field" id="s-searxng-row" style="display:none">
+                <label>searxng base url</label>
+                <input type="text" class="settings-input" id="s-searxng-url" placeholder="http://localhost:8080" style="width:100%">
+              </div>
+              <div id="s-google-pse-rows" style="display:none">
+                <div class="s-field"><label>google pse api key</label><input type="password" class="settings-input" id="s-gpse-key" placeholder="AIza..." style="width:100%"></div>
+                <div class="s-field"><label>search engine cx id</label><input type="text" class="settings-input" id="s-gpse-cx" placeholder="cx:..." style="width:100%"></div>
+              </div>
+              <div class="s-field" id="s-serper-row" style="display:none">
+                <label>serper api key</label>
+                <input type="password" class="settings-input" id="s-serper-key" placeholder="..." style="width:100%">
+              </div>
+              <div class="s-field">
+                <label>fallback provider</label>
+                <div class="settings-input custom-select" id="s-search-fallback" style="width:100%" data-value="duckduckgo" data-options="none|none (fail hard);duckduckgo|DuckDuckGo;tavily|Tavily;brave|Brave;disabled|disabled"></div>
+              </div>
+              <div class="s-field">
+                <label>results per query</label>
+                <div class="settings-input custom-select" id="s-search-count" style="width:100px" data-value="5" data-options="3|3;5|5;10|10;20|20"></div>
+              </div>
+              <div id="s-search-status" style="font-size:0.72rem;color:var(--muted);margin-top:0.3rem"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── appearance pane ── -->
+        <div class="s-pane" id="s-pane-appearance">
+          <div class="s-card">
+            <div class="s-card-head">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+              profile
+            </div>
+            <div class="s-card-body">
+              <div class="s-field">
+                <label>your name <span style="color:var(--muted);font-weight:400">— aide greets you by it</span></label>
+                <input type="text" class="settings-input" id="s-user-name" placeholder="e.g. eric" style="width:100%">
+              </div>
+            </div>
+          </div>
+          <div class="s-card">
+            <div class="s-card-head">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13.5" cy="6.5" r=".5"/><circle cx="17.5" cy="10.5" r=".5"/><circle cx="8.5" cy="7.5" r=".5"/><circle cx="6.5" cy="12.5" r=".5"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.555C21.965 6.012 17.461 2 12 2z"/></svg>
+              theme & color
+            </div>
+            <div class="s-card-body">
+              <div class="s-field">
+                <label>mode</label>
+                <div class="theme-mode-row">
+                  <button class="theme-mode-btn" data-theme-mode="dark">dark</button>
+                  <button class="theme-mode-btn" data-theme-mode="light">light</button>
+                </div>
+              </div>
+              <div class="s-field" style="margin-top:0.6rem">
+                <label>accent color <span style="color:var(--muted);font-weight:400">— the highlight used everywhere</span></label>
+                <div class="accent-swatches" id="s-accent-swatches"></div>
+                <div class="accent-custom">
+                  <input type="color" id="s-accent-custom" value="#818cf8" title="pick any color">
+                  <input type="text" id="s-accent-hex" class="settings-input" placeholder="#hex" spellcheck="false" style="width:120px">
+                  <button class="btn" id="s-accent-reset" style="font-size:0.68rem;padding:0.2rem 0.55rem">reset</button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="s-card">
+            <div class="s-card-head">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+              chat bar
+              <button class="btn" id="s-vis-reset-btn" style="margin-left:auto;font-size:0.68rem;padding:0.15rem 0.5rem">reset all</button>
+            </div>
+            <div class="s-card-body" style="padding-top:0.2rem;padding-bottom:0.2rem">
+              <div class="s-toggle-row"><div><div class="s-toggle-label">sensitive blur</div><div class="s-toggle-desc">blur emails, keys and secrets in AI replies</div></div><div class="s-switch" id="s-sensitive-blur-toggle"></div></div>
+              <div class="s-toggle-row"><div><div class="s-toggle-label">text-only emojis</div><div class="s-toggle-desc">strip emoji glyphs from AI replies</div></div><div class="s-switch" id="s-text-emoji-toggle"></div></div>
+              <div class="s-toggle-row"><div><div class="s-toggle-label">welcome message</div><div class="s-toggle-desc">show the empty chat welcome screen</div></div><div class="s-switch" id="s-welcome-toggle"></div></div>
+              <div class="s-toggle-row"><div><div class="s-toggle-label">auto-inject memories</div><div class="s-toggle-desc">include relevant memories in every chat</div></div><div class="s-switch" id="s-memory-inject-toggle"></div></div>
+              <div class="s-toggle-row"><div><div class="s-toggle-label">compact mode</div><div class="s-toggle-desc">tighter spacing throughout the UI</div></div><div class="s-switch" id="s-ui-compact-toggle"></div></div>
+              <div class="s-field" style="margin-top:0.35rem">
+                <label>font size</label>
+                <div class="settings-input custom-select" id="s-ui-font-size" style="width:120px" data-value="md" data-options="sm|small;md|medium;lg|large"></div>
+              </div>
+              <div class="s-toggle-row"><div><div class="s-toggle-label">research mode</div><div class="s-toggle-desc">deep research button in composer</div></div><div class="s-switch s-vis-toggle" data-vis="#research-toggle-btn" data-vis-key="bar-research"></div></div>
+              <div class="s-toggle-row"><div><div class="s-toggle-label">shell</div><div class="s-toggle-desc">shell command shortcut in composer</div></div><div class="s-switch s-vis-toggle" data-vis="#shell-btn-tool" data-vis-key="bar-shell"></div></div>
+              <div class="s-toggle-row"><div><div class="s-toggle-label">microphone</div><div class="s-toggle-desc">voice input button</div></div><div class="s-switch s-vis-toggle" data-vis="#mic-btn" data-vis-key="bar-mic"></div></div>
+              <div class="s-toggle-row"><div><div class="s-toggle-label">incognito</div><div class="s-toggle-desc">incognito mode button</div></div><div class="s-switch s-vis-toggle" data-vis="#incognito-btn" data-vis-key="bar-incognito"></div></div>
+              <div class="s-toggle-row"><div><div class="s-toggle-label">agent / chat mode</div><div class="s-toggle-desc">mode switcher in composer</div></div><div class="s-switch s-vis-toggle" data-vis=".mode-toggle" data-vis-key="bar-mode"></div></div>
+            </div>
+          </div>
+          <div class="s-card">
+            <div class="s-card-head">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+              sidebar views
+            </div>
+            <div class="s-card-body" style="padding-top:0.2rem;padding-bottom:0.2rem">
+              <div class="s-toggle-row"><div><div class="s-toggle-label">docs</div></div><div class="s-switch s-vis-toggle" data-vis=".nav-item[data-view='wiki']" data-vis-key="nav-wiki"></div></div>
+              <div class="s-toggle-row"><div><div class="s-toggle-label">tasks</div></div><div class="s-switch s-vis-toggle" data-vis=".nav-item[data-view='tasks']" data-vis-key="nav-tasks"></div></div>
+              <div class="s-toggle-row"><div><div class="s-toggle-label">calendar</div></div><div class="s-switch s-vis-toggle" data-vis=".nav-item[data-view='calendar']" data-vis-key="nav-calendar"></div></div>
+              <div class="s-toggle-row"><div><div class="s-toggle-label">ai gallery</div></div><div class="s-switch s-vis-toggle" data-vis=".nav-item[data-view='gallery']" data-vis-key="nav-gallery"></div></div>
+              <div class="s-toggle-row"><div><div class="s-toggle-label">memory</div></div><div class="s-switch s-vis-toggle" data-vis=".nav-item[data-view='memory']" data-vis-key="nav-memory"></div></div>
+              <div class="s-toggle-row"><div><div class="s-toggle-label">compare</div></div><div class="s-switch s-vis-toggle" data-vis=".nav-item[data-view='compare']" data-vis-key="nav-compare"></div></div>
+              <div class="s-toggle-row"><div><div class="s-toggle-label">secrets</div></div><div class="s-switch s-vis-toggle" data-vis=".nav-item[data-view='vault']" data-vis-key="nav-vault"></div></div>
+              <div class="s-toggle-row"><div><div class="s-toggle-label">contacts</div></div><div class="s-switch s-vis-toggle" data-vis=".nav-item[data-view='contacts']" data-vis-key="nav-contacts"></div></div>
+              <div class="s-toggle-row"><div><div class="s-toggle-label">gallery</div></div><div class="s-switch s-vis-toggle" data-vis=".nav-item[data-view='photos']" data-vis-key="nav-photos"></div></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── voice pane ── -->
+        <div class="s-pane" id="s-pane-voice">
+          <div class="s-card">
+            <div class="s-card-head">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>
+              speech-to-text (STT)
+            </div>
+            <div class="s-card-body">
+              <div class="s-field">
+                <label>provider</label>
+                <div class="settings-input custom-select" id="stt-select" style="width:100%" data-value="browser" data-options="browser|browser (Web Speech API, needs internet);local|local whisper (offline, needs faster-whisper);whisper_api|OpenAI Whisper API"></div>
+              </div>
+              <div class="s-field" id="s-stt-lang-row">
+                <label>language <span style="color:var(--muted);font-weight:400">(optional)</span></label>
+                <input type="text" class="settings-input" id="s-stt-language" placeholder="e.g. en-US, zh-CN, fr-FR" style="width:100%">
+              </div>
+            </div>
+          </div>
+          <div class="s-card">
+            <div class="s-card-head">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+              text-to-speech (TTS)
+            </div>
+            <div class="s-card-body">
+              <div class="s-toggle-row"><div><div class="s-toggle-label">auto-play TTS</div><div class="s-toggle-desc">speak AI replies automatically</div></div><div class="s-switch" id="s-tts-enabled-toggle"></div></div>
+              <div class="s-field">
+                <label>provider</label>
+                <div class="settings-input custom-select" id="tts-select" style="width:100%" data-value="browser" data-options="browser|browser (speechSynthesis, free);openai|OpenAI TTS"></div>
+              </div>
+              <div class="s-field" id="s-tts-voice-row" style="display:none">
+                <label>voice</label>
+                <div class="settings-input custom-select" id="s-tts-voice" style="width:100%" data-value="alloy" data-options="alloy|alloy;echo|echo;fable|fable;onyx|onyx;nova|nova;shimmer|shimmer"></div>
+              </div>
+              <div class="s-field">
+                <label>speed <span id="s-tts-speed-val" style="color:var(--accent)">1.0×</span></label>
+                <input type="range" id="s-tts-speed" min="0.5" max="2" step="0.1" value="1.0" style="width:100%;accent-color:var(--accent)">
+              </div>
+            </div>
+          </div>
+          <div class="s-card">
+            <div class="s-card-head">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+              openai api key
+            </div>
+            <div class="s-card-body">
+              <div class="s-field">
+                <label>required for whisper api and openai tts</label>
+                <input type="password" class="settings-input" id="settings-openai-key" placeholder="sk-..." style="width:100%">
+              </div>
+              <button class="btn primary" id="s-voice-save-btn" style="width:100%;margin-top:0.2rem">save voice settings</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── personas pane ── -->
+        <div class="s-pane" id="s-pane-personas">
+          <div class="s-card">
+            <div class="s-card-head">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+              personas
+            </div>
+            <div class="s-card-body">
+              <div id="persona-list" style="margin-bottom:0.75rem"></div>
+              <div class="s-field"><label>name</label><input type="text" class="settings-input" id="persona-name" placeholder="name" style="width:100%"></div>
+              <div class="s-field"><label>system prompt</label><textarea class="settings-textarea" id="persona-prompt" rows="3" placeholder="You are..."></textarea></div>
+              <button class="btn primary" id="persona-add-btn" style="width:100%">add persona</button>
+            </div>
+          </div>
+          <div class="s-card">
+            <div class="s-card-head">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+              cookbook (custom slash commands)
+            </div>
+            <div class="s-card-body">
+              <div id="cookbook-list" style="margin-bottom:0.75rem"></div>
+              <div style="display:flex;gap:0.4rem;flex-wrap:wrap">
+                <div class="s-field" style="flex:1;min-width:80px"><label>name</label><input type="text" class="settings-input" id="cookbook-name"></div>
+                <div class="s-field" style="flex:1;min-width:100px"><label>description</label><input type="text" class="settings-input" id="cookbook-desc"></div>
+              </div>
+              <div class="s-field"><label>prompt template</label><textarea class="settings-textarea" id="cookbook-prompt" rows="2" placeholder="use {args} for the user's input"></textarea></div>
+              <button class="btn primary" id="cookbook-add-btn" style="width:100%">add command</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── templates pane ── -->
+        <div class="s-pane" id="s-pane-templates">
+          <div class="s-card">
+            <div class="s-card-head">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+              session templates
+            </div>
+            <div class="s-card-body">
+              <div id="template-list" style="margin-bottom:0.75rem"></div>
+              <div class="s-field"><label>template name</label><input type="text" class="settings-input" id="tpl-name" placeholder="e.g. code review" style="width:100%"></div>
+              <div class="s-field"><label>system prompt <span style="color:var(--muted);font-weight:400">(optional)</span></label><textarea class="settings-textarea" id="tpl-system" rows="2" placeholder="You are..."></textarea></div>
+              <div class="s-field"><label>initial message <span style="color:var(--muted);font-weight:400">(optional)</span></label><input type="text" class="settings-input" id="tpl-message" placeholder="e.g. Please review this code:" style="width:100%"></div>
+              <button class="btn primary" id="tpl-add-btn" style="width:100%">save template</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── tools pane ── -->
+        <div class="s-pane" id="s-pane-tools">
+          <div class="s-card">
+            <div class="s-card-head">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4"/><path d="M12 18v4"/><path d="M4.93 4.93l2.83 2.83"/><path d="M16.24 16.24l2.83 2.83"/><path d="M2 12h4"/><path d="M18 12h4"/><path d="M4.93 19.07l2.83-2.83"/><path d="M16.24 7.76l2.83-2.83"/></svg>
+              agent stack
+              <button class="btn" id="agent-status-refresh-btn" style="margin-left:auto;font-size:0.68rem;padding:0.15rem 0.5rem">refresh</button>
+            </div>
+            <div class="s-card-body">
+              <div id="agent-status-grid" class="agent-status-grid"></div>
+              <div class="agent-caps">
+                <div class="s-toggle-row"><div><div class="s-toggle-label">context files</div><div class="s-toggle-desc">read AGENTS.md from the working dir</div></div><div class="s-switch" id="s-agent-ctx-toggle"></div></div>
+                <div class="s-toggle-row"><div><div class="s-toggle-label">shell sandbox</div><div class="s-toggle-desc">run shell inside docker (needs docker installed)</div></div><div class="s-switch" id="s-agent-sandbox-toggle"></div></div>
+                <div class="s-toggle-row"><div><div class="s-toggle-label">computer use</div><div class="s-toggle-desc">screenshot + click/type tools (needs pyautogui)</div></div><div class="s-switch" id="s-agent-computer-toggle"></div></div>
+                <div class="s-toggle-row"><div><div class="s-toggle-label">sub-agents</div><div class="s-toggle-desc">allow spawn_agent + parallel delegation</div></div><div class="s-switch" id="s-agent-subagents-toggle"></div></div>
+              </div>
+              <div id="agent-tool-list" class="agent-tool-list"></div>
+              <div id="agent-run-list" class="agent-run-list"></div>
+            </div>
+          </div>
+          <div class="s-card">
+            <div class="s-card-head">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+              mcp servers
+            </div>
+            <div class="s-card-body">
+              <div id="mcp-server-list" style="margin-bottom:0.75rem"></div>
+              <div class="s-field"><label>name</label><input type="text" class="settings-input" id="mcp-name" style="width:100%"></div>
+              <div class="s-field"><label>command</label><input type="text" class="settings-input" id="mcp-command" placeholder="npx -y @modelcontextprotocol/server-filesystem /path" style="width:100%"></div>
+              <button class="btn primary" id="mcp-add-btn" style="width:100%">add server</button>
+            </div>
+          </div>
+          <div class="s-card">
+            <div class="s-card-head">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.9a3.4 3.4 0 0 0-.9-2.6c3-.3 6.2-1.5 6.2-6.7A5.2 5.2 0 0 0 20 4.8 4.8 4.8 0 0 0 19.9 1S18.7.6 16 2.5a13.4 13.4 0 0 0-7 0C6.3.6 5.1 1 5.1 1A4.8 4.8 0 0 0 5 4.8a5.2 5.2 0 0 0-1.4 3.6c0 5.2 3.2 6.4 6.2 6.7a3.4 3.4 0 0 0-.9 2.6V22"/></svg>
+              connections
+            </div>
+            <div class="s-card-body">
+              <div id="conn-list" style="margin-bottom:0.75rem"></div>
+              <div class="s-field"><label>service</label>
+                <div class="settings-input custom-select" id="conn-service" data-value="github" data-options="github|github;gitlab|gitlab;custom|custom…" style="width:100%"></div>
+              </div>
+              <div class="s-field" id="conn-custom-row" style="display:none"><label>name</label><input type="text" class="settings-input" id="conn-custom" placeholder="service id" style="width:100%"></div>
+              <div class="s-field"><label>token</label><input type="password" class="settings-input" id="conn-token" placeholder="personal access token" style="width:100%"></div>
+              <button class="btn primary" id="conn-add-btn" style="width:100%">connect</button>
+              <div class="s-card-hint">github: a fine-grained or classic PAT with repo scope. the agent gets github_* tools once connected.</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── developer pane ── -->
+        <div class="s-pane" id="s-pane-developer">
+          <div class="s-card">
+            <div class="s-card-head">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>
+              api tokens
+            </div>
+            <div class="s-card-body">
+              <div id="token-list" style="margin-bottom:0.75rem"></div>
+              <div style="display:flex;gap:0.4rem">
+                <input type="text" class="settings-input" id="token-name" placeholder="token name" style="flex:1">
+                <button class="btn primary" id="token-add-btn">generate</button>
+              </div>
+              <div id="token-reveal" style="display:none;margin-top:0.5rem;padding:0.5rem;border:1px solid var(--faint);border-radius:2px;font-family:monospace;font-size:0.72rem;word-break:break-all;color:var(--accent)"></div>
+            </div>
+          </div>
+          <div class="s-card">
+            <div class="s-card-head">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+              webhooks
+            </div>
+            <div class="s-card-body">
+              <div id="webhook-list" style="margin-bottom:0.75rem"></div>
+              <div class="s-field"><label>name</label><input type="text" class="settings-input" id="wh-name" style="width:100%"></div>
+              <div class="s-field"><label>url</label><input type="text" class="settings-input" id="wh-url" placeholder="https://..." style="width:100%"></div>
+              <button class="btn primary" id="wh-add-btn" style="width:100%">add webhook</button>
+            </div>
+          </div>
+          <div class="s-card">
+            <div class="s-card-head">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 8h.01M11 8h.01M15 8h.01M7 12h10M7 16h6"/></svg>
+              shortcuts
+            </div>
+            <div class="s-card-body" id="shortcut-settings">
+              <div class="s-field"><label>search</label><input class="settings-input shortcut-input" data-shortcut="search" style="width:160px"></div>
+              <div class="s-field"><label>sidebar</label><input class="settings-input shortcut-input" data-shortcut="sidebar" style="width:160px"></div>
+              <div class="s-field"><label>settings</label><input class="settings-input shortcut-input" data-shortcut="settings" style="width:160px"></div>
+              <div class="s-field"><label>new chat</label><input class="settings-input shortcut-input" data-shortcut="new_chat" style="width:160px"></div>
+              <div class="s-field"><label>send</label><input class="settings-input shortcut-input" data-shortcut="send" style="width:160px"></div>
+            </div>
+          </div>
+          <div class="s-card">
+            <div class="s-card-head">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+              openai-compatible api
+            </div>
+            <div class="s-card-body" style="font-size:0.75rem;color:var(--muted)">
+              <div style="margin-bottom:0.3rem">expose Aide's models via the OpenAI API spec.</div>
+              <div style="margin-bottom:0.3rem">base url: <code id="s-compat-url2" style="color:var(--accent)">http://localhost:8001/v1</code></div>
+              <div>model id format: <code style="color:var(--accent)">EndpointName/model-id</code></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── backup pane ── -->
+        <!-- ── rules pane: personal automations ── -->
+        <div class="s-pane" id="s-pane-rules">
+          <div class="s-card">
+            <div class="s-card-head">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+              automation rules
+            </div>
+            <div class="s-card-body">
+              <p style="font-size:0.75rem;color:var(--muted);margin-bottom:0.75rem">when this happens, do that. rules run in the background — everything is checked within ~30 seconds.</p>
+              <div id="rules-list" style="margin-bottom:0.85rem"></div>
+              <div class="rules-form">
+                <div style="display:flex;gap:0.4rem;flex-wrap:wrap;margin-bottom:0.4rem">
+                  <div id="rule-trigger" class="settings-input custom-select" style="flex:1;min-width:170px"></div>
+                  <input type="text" id="rule-trigger-arg" class="settings-input" placeholder="…" style="flex:1;min-width:140px">
+                </div>
+                <div style="display:flex;gap:0.4rem;flex-wrap:wrap;margin-bottom:0.4rem">
+                  <div id="rule-action" class="settings-input custom-select" style="flex:1;min-width:170px"></div>
+                  <input type="text" id="rule-action-arg" class="settings-input" placeholder="…" style="flex:1;min-width:140px">
+                </div>
+                <div style="display:flex;gap:0.4rem">
+                  <input type="text" id="rule-name" class="settings-input" placeholder="rule name (optional)" style="flex:1">
+                  <button class="btn primary" id="rule-add-btn">add rule</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="s-pane" id="s-pane-backup">
+          <div class="s-card">
+            <div class="s-card-head">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              export
+            </div>
+            <div class="s-card-body">
+              <p style="font-size:0.75rem;color:var(--muted);margin-bottom:0.75rem">downloads a ZIP containing local aide data (chats, docs, tasks, memories) and <code>settings.json</code>.</p>
+              <button class="btn primary" id="backup-export-btn" style="width:100%">download backup</button>
+            </div>
+          </div>
+          <div class="s-card">
+            <div class="s-card-head">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              restore
+            </div>
+            <div class="s-card-body">
+              <p style="font-size:0.75rem;color:var(--muted);margin-bottom:0.75rem">select a ZIP backup to restore. this will replace all current data.</p>
+              <label class="btn primary" style="cursor:pointer;display:block;text-align:center;width:100%">
+                choose backup file
+                <input type="file" id="backup-restore-input" accept=".zip" style="display:none">
+              </label>
+            </div>
+          </div>
+        </div>
+
+      </div><!-- /s-content -->
+    </div><!-- /s-layout -->
+  </div><!-- /s-modal -->
+</div>
+
+<script type="module">
+const _v = '30';
+import(`/static/js/app.js?v=${_v}`);
+</script>
+</body>
+</html>

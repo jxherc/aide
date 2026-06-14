@@ -1,0 +1,24 @@
+.env
+__pycache__/
+*.pyc
+*.pyo
+
+# data — all of it, nothing personal should be tracked
+data/
+
+# logs
+*.log
+server*.log
+
+# ide / local tooling
+.claude/
+.vscode/
+
+# python
+venv/
+.venv/
+*.egg-info/
+dist/
+build/
+node_modules/
+.cmbuild/

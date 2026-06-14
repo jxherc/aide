@@ -1,0 +1,16 @@
+fastapi
+uvicorn[standard]
+python-multipart
+python-dotenv
+httpx
+pydantic>=2.0
+sqlalchemy
+cryptography
+bcrypt                # password hashing (core/auth.py)
+fastembed
+# optional — computer use tools (screenshot/click/type). install if you enable it.
+# pyautogui
+# optional — offline voice input (local whisper STT). install if you enable it.
+# faster-whisper
+# optional — calendar CalDAV sync (iCloud/Google). install if you enable it.
+# caldav
