@@ -57,13 +57,20 @@ class ModelEndpoint(Base):
     base_url     = Column(String, nullable=False)
     api_key      = Column(EncryptedText, default="")   # AES-GCM at rest, see secretstore
     enabled       = Column(Boolean, default=True)
-    cached_models = Column(Text, default="[]")   # json list of model id strings
+    cached_models = Column(Text, default="[]")   # json list of model id strings (chat)
     vision_models = Column(Text, default="[]")   # json list of vision-capable model ids
+    image_models  = Column(Text, default="[]")   # json list of image-generation model ids
     created_at    = Column(DateTime, default=_now)
 
     def models_list(self):
         try:
             return json.loads(self.cached_models or "[]")
+        except Exception:
+            return []
+
+    def image_models_list(self):
+        try:
+            return json.loads(self.image_models or "[]")
         except Exception:
             return []
 
@@ -144,6 +151,17 @@ class Note(Base):
     updated_at = Column(DateTime, default=_now)
 
 
+class JournalEntry(Base):
+    __tablename__ = "journal_entries"
+    id         = Column(String, primary_key=True, default=_uid)
+    date       = Column(String, unique=True, index=True)   # one per day, ISO YYYY-MM-DD
+    content    = Column(Text, default="")
+    mood       = Column(String, default="")                # emoji / short word
+    tags       = Column(String, default="")
+    created_at = Column(DateTime, default=_now)
+    updated_at = Column(DateTime, default=_now)
+
+
 class Task(Base):
     __tablename__ = "tasks"
     id        = Column(String, primary_key=True, default=_uid)
@@ -151,20 +169,48 @@ class Task(Base):
     done      = Column(Boolean, default=False)
     priority  = Column(Integer, default=0)   # 0 normal, 1 high
     due_date  = Column(String, nullable=True)
+    parent_id = Column(String, nullable=True)     # subtasks point at their parent
+    tags      = Column(String, default="")        # comma-separated
+    repeat    = Column(String, default="")        # ''|daily|weekly|monthly|yearly
+    notes     = Column(Text, default="")
+    project   = Column(String, default="")
+    sort_order = Column(Integer, default=0)        # manual drag-reorder
+    completed_at = Column(DateTime, nullable=True)  # when done flipped true (for the activity feed)
+    created_at = Column(DateTime, default=_now)
+
+
+class Calendar(Base):
+    """a named calendar (Personal/Work/…) — events belong to one, inherit its
+    colour, and can be toggled on/off as a layer."""
+    __tablename__ = "calendars"
+    id         = Column(String, primary_key=True, default=_uid)
+    name       = Column(String, nullable=False)
+    color      = Column(String, default="accent")
+    visible    = Column(Boolean, default=True)
+    is_default = Column(Boolean, default=False)
+    sort_order = Column(Integer, default=0)
     created_at = Column(DateTime, default=_now)
 
 
 class CalendarEvent(Base):
     __tablename__ = "calendar_events"
     id          = Column(String, primary_key=True, default=_uid)
+    calendar_id = Column(String, default="")        # which Calendar it belongs to
     title       = Column(String, nullable=False)
     description = Column(Text, default="")
+    location    = Column(String, default="")
+    guests      = Column(Text, default="")          # freeform / comma list
     start_dt    = Column(String, nullable=False)  # ISO8601
     end_dt      = Column(String, nullable=True)
     all_day     = Column(Boolean, default=False)
-    color       = Column(String, default="")      # accent | green | warn | etc.
-    recurrence  = Column(String, default="")       # '' | daily | weekly | monthly
+    color       = Column(String, default="")      # override; '' = use the calendar's colour
+    reminders   = Column(Text, default="[]")        # json: minutes-before [10, 60, ...]
+    recurrence  = Column(String, default="")       # '' | daily | weekly | monthly | yearly
+    recur_interval = Column(Integer, default=1)     # every N (days/weeks/…)
+    recur_byday = Column(String, default="")        # weekly: 'MO,WE,FR'
+    recur_count = Column(Integer, nullable=True)     # end after N occurrences
     recur_until = Column(String, nullable=True)     # ISO date, optional series end
+    recur_except = Column(Text, default="[]")       # json: excluded occurrence dates
     caldav_uid  = Column(String, nullable=True)     # set when synced from/to CalDAV
     created_at  = Column(DateTime, default=_now)
 
@@ -195,6 +241,10 @@ class Persona(Base):
     emoji        = Column(String, default="")
     system_prompt = Column(Text, default="")
     model        = Column(String, default="")       # override model, or "" = use session default
+    temperature  = Column(Float, nullable=True)      # pinned sampling temp, or null = provider default
+    default_mode = Column(String, default="")        # "" auto | "chat" pure-chat | "agent" always tools
+    accent       = Column(String, default="")        # hex accent that re-themes the app when active, "" = use global
+    initial_message = Column(Text, default="")       # prefilled into the composer when picked (merged from templates)
     is_default   = Column(Boolean, default=False)
     created_at   = Column(DateTime, default=_now)
 
@@ -382,7 +432,41 @@ class Subscription(Base):
     active      = Column(Boolean, default=True)
     remind_days = Column(Integer, default=1)           # push N days before renewal (0 = off)
     last_notified_due = Column(String, default="")     # due date we already pushed for
+    account_id  = Column(String, default="")           # money account to auto-post the charge to (optional)
+    last_posted_due = Column(String, default="")       # due date we already posted a txn for
     created_at  = Column(DateTime, default=_now)
+
+
+class Account(Base):
+    __tablename__ = "money_accounts"
+    id         = Column(String, primary_key=True, default=_uid)
+    name       = Column(String, nullable=False)
+    kind       = Column(String, default="checking")   # checking | savings | cash | credit | investment
+    currency   = Column(String, default="$")
+    opening    = Column(Float, default=0.0)            # starting balance; live balance = opening + txns
+    color      = Column(String, default="accent")
+    archived   = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=_now)
+
+
+class Transaction(Base):
+    __tablename__ = "money_transactions"
+    id         = Column(String, primary_key=True, default=_uid)
+    account_id = Column(String, ForeignKey("money_accounts.id", ondelete="CASCADE"))
+    date       = Column(String, nullable=False)        # ISO date YYYY-MM-DD
+    amount     = Column(Float, default=0.0)            # positive = income, negative = expense
+    category   = Column(String, default="")
+    payee      = Column(String, default="")
+    notes      = Column(Text, default="")
+    created_at = Column(DateTime, default=_now)
+
+
+class Budget(Base):
+    __tablename__ = "money_budgets"
+    id         = Column(String, primary_key=True, default=_uid)
+    category   = Column(String, nullable=False)
+    limit_amt  = Column(Float, default=0.0)            # monthly spending cap for this category
+    created_at = Column(DateTime, default=_now)
 
 
 class DocRevision(Base):
@@ -400,6 +484,22 @@ class PushSubscription(Base):
     p256dh     = Column(String, default="")                  # client public key
     auth       = Column(String, default="")                  # client auth secret
     created_at = Column(DateTime, default=_now)
+
+
+class CachedMessage(Base):
+    # header cache for the mail inbox — instant open + offline fallback + local search,
+    # so we're not waiting on an IMAP round-trip every time. populated on each live fetch.
+    __tablename__ = "cached_messages"
+    id          = Column(String, primary_key=True, default=_uid)
+    account_id  = Column(String, index=True, nullable=False)
+    folder      = Column(String, default="INBOX", index=True)
+    uid         = Column(String, nullable=False)
+    sender      = Column(Text, default="")
+    subject     = Column(Text, default="")
+    date        = Column(String, default="")
+    date_ts     = Column(Float, default=0)
+    seen        = Column(Boolean, default=False)
+    cached_at   = Column(DateTime, default=_now)
 
 
 class SessionTemplate(Base):
@@ -442,12 +542,34 @@ def init_db():
         _add_col(conn, "sessions", "archived",     "BOOLEAN DEFAULT 0")
         _add_col(conn, "sessions", "share_token",  "TEXT")
         _add_col(conn, "model_endpoints", "vision_models", "TEXT DEFAULT '[]'")
+        _add_col(conn, "model_endpoints", "image_models", "TEXT DEFAULT '[]'")
+        _add_col(conn, "personas", "initial_message", "TEXT DEFAULT ''")
         _add_col(conn, "projects", "working_dir", "TEXT DEFAULT ''")
         _add_col(conn, "vault_entries", "username", "TEXT DEFAULT ''")
         _add_col(conn, "calendar_events", "recurrence",  "TEXT DEFAULT ''")
         _add_col(conn, "calendar_events", "recur_until", "TEXT")
         _add_col(conn, "calendar_events", "caldav_uid",  "TEXT")
         _add_col(conn, "reminders", "notified", "BOOLEAN DEFAULT 0")
+        _add_col(conn, "tasks", "parent_id",  "TEXT")
+        _add_col(conn, "tasks", "tags",       "TEXT DEFAULT ''")
+        _add_col(conn, "tasks", "repeat",     "TEXT DEFAULT ''")
+        _add_col(conn, "tasks", "notes",      "TEXT DEFAULT ''")
+        _add_col(conn, "tasks", "project",    "TEXT DEFAULT ''")
+        _add_col(conn, "tasks", "sort_order", "INTEGER DEFAULT 0")
+        _add_col(conn, "personas", "temperature", "REAL")
+        _add_col(conn, "personas", "default_mode", "TEXT DEFAULT ''")
+        _add_col(conn, "personas", "accent", "TEXT DEFAULT ''")
+        _add_col(conn, "subscriptions", "account_id", "TEXT DEFAULT ''")
+        _add_col(conn, "subscriptions", "last_posted_due", "TEXT DEFAULT ''")
+        _add_col(conn, "tasks", "completed_at", "DATETIME")
+        _add_col(conn, "calendar_events", "calendar_id",    "TEXT DEFAULT ''")
+        _add_col(conn, "calendar_events", "location",       "TEXT DEFAULT ''")
+        _add_col(conn, "calendar_events", "guests",         "TEXT DEFAULT ''")
+        _add_col(conn, "calendar_events", "reminders",      "TEXT DEFAULT '[]'")
+        _add_col(conn, "calendar_events", "recur_interval", "INTEGER DEFAULT 1")
+        _add_col(conn, "calendar_events", "recur_byday",    "TEXT DEFAULT ''")
+        _add_col(conn, "calendar_events", "recur_count",    "INTEGER")
+        _add_col(conn, "calendar_events", "recur_except",   "TEXT DEFAULT '[]'")
     _encrypt_plaintext_secrets()
 
 

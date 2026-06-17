@@ -38,8 +38,11 @@ def _extract_artifacts(text: str) -> list[dict]:
 def _resolve_endpoint(session: Session, db: DbSession) -> ModelEndpoint | None:
     if session.endpoint_id:
         return db.get(ModelEndpoint, session.endpoint_id)
-    # fallback: first enabled endpoint
-    return db.query(ModelEndpoint).filter(ModelEndpoint.enabled == True).first()
+    # fallback: first enabled endpoint, or a local one if the user prefers that
+    eps = db.query(ModelEndpoint).filter(ModelEndpoint.enabled == True).all()
+    from core.settings import load_settings
+    from services.routing import pick_endpoint
+    return pick_endpoint(eps, prefer_local=bool(load_settings().get("prefer_local_models")))
 
 
 def _resolve_persona(session: Session, db) -> Persona | None:
@@ -47,6 +50,36 @@ def _resolve_persona(session: Session, db) -> Persona | None:
     if session.persona_id:
         return db.get(Persona, session.persona_id)
     return db.query(Persona).filter(Persona.is_default == True).first()
+
+
+def _apply_persona_model(session: Session, ep: ModelEndpoint, model: str, db):
+    """if the active persona pins a model, use it — and switch to an enabled endpoint
+    that actually serves it when the current one doesn't."""
+    p = _resolve_persona(session, db)
+    if not (p and p.model):
+        return ep, model
+    model = p.model
+    if model not in (ep.models_list() or []):
+        for e in db.query(ModelEndpoint).filter(ModelEndpoint.enabled == True).all():
+            if model in (e.models_list() or []):
+                return e, model
+    return ep, model
+
+
+def _decide_mode(base_mode: str, pmode: str, message: str, simple: bool, auto_intents: bool):
+    """resolve the effective turn mode. returns (mode, force_approve).
+    a persona's default_mode: "agent" always runs tools, "chat" stays pure chat (no
+    auto-promote), "" falls back to intent-based auto-promotion. mutations that get
+    auto-promoted are gated behind approval so a chat turn can't silently act."""
+    if base_mode != "chat" or simple:
+        return base_mode, False
+    if pmode == "agent":
+        return "agent", True
+    if pmode != "chat" and auto_intents:
+        from services.agent_intents import message_needs_tools
+        if message_needs_tools(message):
+            return "agent", True
+    return "chat", False
 
 
 def _resolve_working_dir(session: Session) -> str:
@@ -178,6 +211,7 @@ class ChatRequest(BaseModel):
     incognito: bool = False
     permission_mode: str = ""   # full_auto | approve | plan
     effort: str = ""            # low | medium | high
+    simple: bool = False        # pure chat — never auto-promote to tools (the home "ask aide")
 
 
 async def _sse(gen):
@@ -214,7 +248,12 @@ async def _stream_and_save(
                 usage = merge_usage(usage, chunk.get("usage", {}))
             yield chunk
     else:
-        async for chunk in stream_chat(messages, ep.base_url, ep.api_key, model):
+        chat_kw = {}
+        if settings and settings.get("temperature") is not None:
+            chat_kw["temperature"] = settings["temperature"]
+        if settings and settings.get("agent_effort"):
+            chat_kw["effort"] = settings["agent_effort"]   # per-model reasoning effort
+        async for chunk in stream_chat(messages, ep.base_url, ep.api_key, model, **chat_kw):
             if stop_event.is_set():
                 break
             if "error" in chunk:
@@ -250,7 +289,7 @@ async def _stream_and_save(
             um = Message(session_id=session_id, role="user", content=user_text)
             db.add(um)
 
-        meta = {"usage": usage}
+        meta = {"usage": usage, "model": model}
         if thinking_acc:
             meta["thinking"] = "".join(thinking_acc)
         if tool_steps:
@@ -298,11 +337,15 @@ async def chat(body: ChatRequest, background_tasks: BackgroundTasks, db: DbSessi
         raise HTTPException(400, "no model endpoint configured — add one in settings")
 
     model = s.model or (ep.models_list()[0] if ep.models_list() else "")
+    ep, model = _apply_persona_model(s, ep, model, db)
     if not model:
         raise HTTPException(400, "no model selected")
 
     settings = load_settings()
     settings["agent_cwd"] = _resolve_working_dir(s)
+    _p = _resolve_persona(s, db)
+    if _p and _p.temperature is not None:
+        settings["temperature"] = _p.temperature
     if body.permission_mode:
         settings["agent_permission_mode"] = body.permission_mode
     if body.effort:
@@ -324,7 +367,12 @@ async def chat(body: ChatRequest, background_tasks: BackgroundTasks, db: DbSessi
 
     from core.database import SessionLocal as _SF
     incognito = bool(body.incognito or getattr(s, "incognito", False))
-    mode = body.mode or getattr(s, "mode", "chat") or "chat"
+    base_mode = body.mode or getattr(s, "mode", "chat") or "chat"
+    pmode = (_p.default_mode if _p else "") or ""
+    mode, force_approve = _decide_mode(base_mode, pmode, body.message, body.simple,
+                                       settings.get("agent_auto_intents", True))
+    if force_approve and not body.permission_mode:
+        settings["agent_permission_mode"] = "approve"
     gen = _stream_and_save(body.session_id, body.message, messages, ep, model,
                            stop_event, _SF, incognito=incognito,
                            mode=mode, settings=settings)
@@ -353,12 +401,16 @@ async def chat_background(body: ChatRequest, db: DbSession = Depends(get_db)):
     if not ep:
         raise HTTPException(400, "no model endpoint configured")
     model = s.model or (ep.models_list()[0] if ep.models_list() else "")
+    ep, model = _apply_persona_model(s, ep, model, db)
     if not model:
         raise HTTPException(400, "no model selected")
 
     settings = load_settings()
     settings["agent_cwd"] = _resolve_working_dir(s)
     settings["agent_permission_mode"] = "full_auto"   # nothing is watching to approve
+    _p = _resolve_persona(s, db)
+    if _p and _p.temperature is not None:
+        settings["temperature"] = _p.temperature
     aug_text = _resolve_mentions(body.message, settings["agent_cwd"])
     messages = _build_messages(s, aug_text, settings, db, body.file_ids)
 
@@ -372,6 +424,13 @@ async def chat_background(body: ChatRequest, db: DbSession = Depends(get_db)):
                 body.session_id, body.message, messages, ep, model,
                 stop_event, _SF, incognito=False, mode="agent", settings=settings,
             ):
+                pass
+            # ping Discord/Telegram when a long background run wraps up
+            try:
+                from services import notify
+                if settings.get("notify_on_agent_done") and notify.configured():
+                    await notify.send(f"✓ aide finished a background run: {body.message[:140]}")
+            except Exception:
                 pass
         finally:
             _streams.pop(body.session_id, None)

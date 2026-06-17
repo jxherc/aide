@@ -24,6 +24,7 @@ class SettingsPatch(BaseModel):
     agent_max_tokens: int | None = None
     agent_permission_mode: str | None = None
     agent_allowed_roots: list[str] | None = None
+    permission_rules: list | None = None
     auto_compact: bool | None = None
     compact_threshold: int | None = None
     tts_provider: str | None = None
@@ -44,9 +45,41 @@ class SettingsPatch(BaseModel):
     tts_speed: float | None = None
     tts_auto_play: bool | None = None
     stt_language: str | None = None
+    theme: str | None = None      # '' (dark/default) | 'light' — synced across subdomains
+    accent: str | None = None     # hex like '#818cf8', or '' for the default
+    notify_discord_webhook: str | None = None
+    notify_telegram_token: str | None = None
+    notify_telegram_chat_id: str | None = None
+    notify_on_agent_done: bool | None = None
+    outbound_proxy: str | None = None    # e.g. http://127.0.0.1:7890 — routes all egress through it
+    prefer_local_models: bool | None = None   # fallback to a local (ollama) endpoint when available
+    username: str | None = None          # display name, synced across subdomains
+    # ── per-app settings ──
+    files_dir: str | None = None         # files app root directory
+    photos_dir: str | None = None        # gallery library folder
+    cal_default_view: str | None = None  # 'month' | 'week'
+    cal_week_start: str | None = None    # 'sun' | 'mon'
+    system_refresh: int | None = None    # system monitor poll interval (ms)
+    mail_poll_seconds: int | None = None # mail background check interval
+    mail_signature: str | None = None    # appended/prefilled when composing
 
 
 @router.patch("/settings")
 def patch_settings(body: SettingsPatch):
     patch = {k: v for k, v in body.model_dump().items() if v is not None}
-    return save_settings(patch)
+    old_photos = load_settings().get("photos_dir") if "photos_dir" in patch else None
+    out = save_settings(patch)
+    if "photos_dir" in patch:
+        # the library is indexed by bare filename → carry the files to the new folder
+        try:
+            from services import photos_store
+            photos_store.relocate(old_photos)
+        except Exception:
+            pass
+    if "outbound_proxy" in patch:
+        try:
+            from services import net
+            net.apply_proxy()   # take effect without a restart
+        except Exception:
+            pass
+    return out

@@ -54,6 +54,30 @@ class AnthropicPayloadTests(unittest.TestCase):
         asst = [m for m in p["messages"] if m["role"] == "assistant"][0]
         self.assertEqual(asst["content"][0]["type"], "tool_use")
 
+    def test_temperature_threads_through(self):
+        msgs = [{"role": "user", "content": "hi"}]
+        # anthropic builder used to silently drop temperature
+        self.assertEqual(llm._build_anthropic_payload(msgs, "claude-x", temperature=0.2)["temperature"], 0.2)
+        self.assertEqual(llm._build_openai_payload(msgs, "gpt-x", temperature=0.2)["temperature"], 0.2)
+        # absent → not forced into the payload
+        self.assertNotIn("temperature", llm._build_anthropic_payload(msgs, "claude-x"))
+        self.assertNotIn("temperature", llm._build_openai_payload(msgs, "gpt-x"))
+
+
+class OpenAIUsagePayloadTests(unittest.TestCase):
+    # deepseek (+ other openai-compatible) must request usage on streamed replies,
+    # else the usage dashboard has no tokens to show for them
+    def test_include_usage_for_compatible_providers(self):
+        msgs = [{"role": "user", "content": "hi"}]
+        for prov in ("openai", "deepseek", "openrouter", "groq", "xai"):
+            p = llm._build_openai_payload(msgs, "m", stream=True, provider=prov)
+            self.assertEqual(p.get("stream_options"), {"include_usage": True}, prov)
+
+    def test_no_usage_flag_when_unsupported_or_not_streaming(self):
+        msgs = [{"role": "user", "content": "hi"}]
+        self.assertNotIn("stream_options", llm._build_openai_payload(msgs, "m", stream=False, provider="deepseek"))
+        self.assertNotIn("stream_options", llm._build_openai_payload(msgs, "m", stream=True, provider="gemini"))
+
 
 if __name__ == "__main__":
     unittest.main()

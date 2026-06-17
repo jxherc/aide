@@ -3,11 +3,47 @@ import {
   appendUserMsg, createStreamingAiRow, scrollDown,
   showMessages, updateSessionName, createSession, getActiveId, markActive,
 } from './sessions.js';
-import { getSelected, getCurrentEndpoint } from './models.js';
+import { getSelected, getCurrentEndpoint, isImageSelected } from './models.js';
 import { openArtifact, extractArtifacts, stripArtifacts } from './artifacts.js';
 import { getAttachments, clearAttachments } from './uploads.js';
 import { isIncognitoMode, getPermMode, getEffort } from './modes.js';
 import { applyResponsePrivacy, stripEmojis } from './privacy.js';
+
+// tools that change state / reach out — flagged in the agent panel + permission cards
+const DESTRUCTIVE_TOOLS = new Set(['shell', 'bash', 'write_file', 'edit_file', 'apply_patch',
+  'git_commit', 'git_push', 'revert_file', 'delete_file', 'mail_send',
+  'computer_click', 'computer_type', 'computer_key', 'computer_scroll']);
+
+// one-line human summary of a tool call (so the panel + approvals read clearly,
+// not as raw JSON)
+function toolSummary(name, args = {}) {
+  const a = args || {};
+  const cut = (s, n = 70) => String(s || '').replace(/\s+/g, ' ').slice(0, n);
+  switch (name) {
+    case 'read_file': return `read ${a.path || ''}`;
+    case 'write_file': return `write ${a.path || ''}`;
+    case 'edit_file': return `edit ${a.path || ''}`;
+    case 'apply_patch': return 'apply a patch';
+    case 'shell': case 'bash': return `run: ${cut(a.command, 90)}`;
+    case 'grep_files': return `grep "${cut(a.pattern, 40)}"`;
+    case 'glob_files': return `glob ${a.pattern || ''}`;
+    case 'list_files': return `list ${a.path || '.'}`;
+    case 'web_search': return `search: ${cut(a.query, 50)}`;
+    case 'web_fetch': return `fetch ${cut(a.url, 60)}`;
+    case 'git_commit': return 'git commit';
+    case 'git_status': return 'git status';
+    case 'git_diff': return 'git diff';
+    case 'todo_update': return 'update the checklist';
+    case 'memory_search': return `recall: ${cut(a.query, 40)}`;
+    case 'memory_add': return 'remember a fact';
+    case 'diagnostics': return 'run diagnostics';
+    case 'mail_send': return `send mail to ${cut(a.to, 40)}`;
+    default: {
+      const v = Object.values(a).find(x => typeof x === 'string' && x.length < 80);
+      return v ? `${name}: ${cut(v)}` : name;
+    }
+  }
+}
 
 // expose mdToHtml for sessions.js lazy fallback
 window._mdToHtml = mdToHtml;
@@ -71,7 +107,7 @@ export async function sendMessage(text) {
     const ep = getCurrentEndpoint();
     if (!ep) { toast('no endpoint configured — add one via the model picker', 'error'); return; }
     const model = getSelected()?.model || ep.models[0] || '';
-    const s = await createSession(model, ep.id, { incognito: isIncognitoMode() });
+    const s = await createSession(model, ep.id, { incognito: isIncognitoMode(), mode: getMode() });
     if (!s) { toast('failed to create session', 'error'); return; }
     sessionId = s.id;
     freshSession = true;     // first message ever → auto-name it after the reply
@@ -80,6 +116,9 @@ export async function sendMessage(text) {
 
   const sel = getSelected();
   if (!sel) { toast('select a model first', 'error'); return; }
+
+  // image model picked → generate an image instead of chatting
+  if (isImageSelected()) { _sendImage(text, sessionId, freshSession); return; }
 
   showMessages();
   appendUserMsg(text);
@@ -186,7 +225,7 @@ export async function sendMessage(text) {
         file_ids: getAttachments(),
         incognito: isIncognitoMode(),
         permission_mode: getMode() === 'agent' ? getPermMode() : '',
-        effort: getMode() === 'agent' ? getEffort() : '',
+        effort: getEffort(getSelected()?.model),   // per-model effort, applies to chat + agent
       }),
     });
 
@@ -284,15 +323,16 @@ export async function sendMessage(text) {
           const t = chunk.tool_start;
           const panel = ensureAgentPanel();
           const step = document.createElement('div');
-          step.className = 'agent-step running';
+          step.className = 'agent-step running' + (DESTRUCTIVE_TOOLS.has(t.name) ? ' destructive' : '');
           step.dataset.callId = t.call_id || '';
           step.innerHTML = `
             <div class="agent-step-head">
               <span class="agent-step-dot"></span>
               <span class="agent-step-name">${escHtml(t.name || 'tool')}</span>
+              <span class="agent-step-summary">${escHtml(toolSummary(t.name, t.args))}</span>
               <span class="agent-step-status">running</span>
             </div>
-            <pre class="agent-step-args">${escHtml(JSON.stringify(t.args || {}, null, 2))}</pre>
+            <details class="agent-step-args-wrap"><summary>args</summary><pre class="agent-step-args">${escHtml(JSON.stringify(t.args || {}, null, 2))}</pre></details>
             <pre class="agent-step-output"></pre>
           `;
           panel.appendChild(step);
@@ -347,7 +387,7 @@ export async function sendMessage(text) {
             card.className = 'agent-perm';
             card.dataset.req = t.request_id;
             card.innerHTML = `
-              <div class="agent-perm-msg">approve <b>${escHtml(t.name)}</b>?</div>
+              <div class="agent-perm-msg">approve: <b>${escHtml(toolSummary(t.name, t.args))}</b>?</div>
               <div class="agent-perm-actions">
                 <button class="agent-perm-allow">approve</button>
                 <button class="agent-perm-deny">deny</button>
@@ -446,6 +486,33 @@ export async function sendMessage(text) {
     updateStats(true);  // final token count + tok/s (real if usage was sent)
     cursor?.remove();
     body.classList.add('done');
+
+    // provenance — let the reader see what the run actually touched
+    if (agentEl && runId) {
+      const sum = agentEl.querySelector('summary');
+      if (sum && !sum.querySelector('.agent-sources-btn')) {
+        const sb = document.createElement('button');
+        sb.className = 'agent-sources-btn';
+        sb.textContent = 'sources';
+        sb.title = 'files, urls, searches and commands this run touched';
+        let panel = null;
+        sb.addEventListener('click', async (e) => {
+          e.preventDefault(); e.stopPropagation();
+          if (panel) { panel.hidden = !panel.hidden; return; }
+          sb.disabled = true;
+          try {
+            const src = await fetch(`/api/agent/runs/${runId}/sources`).then(x => x.json());
+            const { sourcesHtml } = await import('./runs.js');
+            panel = document.createElement('div');
+            panel.className = 'agent-sources';
+            panel.innerHTML = sourcesHtml(src);
+            agentEl.appendChild(panel);
+          } catch { toast('couldn’t load sources', 'error'); }
+          sb.disabled = false;
+        });
+        sum.appendChild(sb);
+      }
+    }
 
     // revert control — only if the agent actually edited files this run
     if (agentEl && runId && hadEdits) {
@@ -584,6 +651,50 @@ export function stopStream() {
   const sid = getActiveId();
   if (sid) fetch(`/api/chat/stop/${sid}`, { method: 'POST' }).catch(() => {});
   setStreaming(false);
+}
+
+
+// image-gen turn: same chat thread, but hit the image endpoint. backend saves the
+// pic to the gallery + a document and persists the turn, so it survives a reload.
+async function _sendImage(prompt, sessionId, fresh) {
+  const sel = getSelected();
+  showMessages();
+  appendUserMsg(prompt);
+  clearAttachments();
+  scrollDown();
+  setStreaming(true);
+  const { body } = createStreamingAiRow();
+  const status = document.createElement('div');
+  status.className = 'ai-content img-gen-status';
+  status.textContent = 'generating image…';
+  body.appendChild(status);
+  scrollDown();
+  try {
+    const r = await fetch('/api/images/chat', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ session_id: sessionId, prompt, model: sel.model, endpoint_id: sel.endpointId }),
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || 'generation failed');
+    body.innerHTML = '';
+    const content = document.createElement('div');
+    content.className = 'ai-content';
+    content.innerHTML = mdToHtml(d.content);
+    body.appendChild(content);
+    body.classList.add('done');
+    if (fresh && d.doc_id && d.doc_title) updateSessionName(sessionId, d.doc_title);
+    toast(d.doc_id ? 'saved to documents' : 'image generated', 'success');
+  } catch (e) {
+    body.innerHTML = '';
+    const err = document.createElement('div');
+    err.className = 'ai-content';
+    err.textContent = 'image generation failed — ' + (e.message || '');
+    body.appendChild(err);
+    toast(e.message || 'generation failed', 'error');
+  } finally {
+    setStreaming(false);
+    scrollDown();
+  }
 }
 
 

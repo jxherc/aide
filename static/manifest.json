@@ -1,6 +1,6 @@
 {
-  "name": "aide",
-  "short_name": "aide",
+  "name": "alles",
+  "short_name": "alles",
   "description": "your everything-app, self-hosted",
   "start_url": "/",
   "display": "standalone",

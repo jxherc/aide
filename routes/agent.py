@@ -3,7 +3,7 @@ from fastapi import HTTPException
 from pydantic import BaseModel
 
 from services.agent_tools import agent_status, revert_run
-from services.agent_state import list_runs, get_run
+from services.agent_state import list_runs, get_run, find_active_run
 from services.agent_runtime import resolve_permission
 
 router = APIRouter(prefix="/api")
@@ -50,9 +50,41 @@ async def status():
     return await agent_status()
 
 
+_RUN_LITE = ("id", "session_id", "model", "cwd", "status", "turn", "max_turns",
+             "started_at", "finished_at", "updated_at")
+
+
 @router.get("/agent/runs")
-def runs(limit: int = 20):
-    return list_runs(limit=limit)
+def runs(limit: int = 20, summary: bool = False):
+    rows = list_runs(limit=limit)
+    if not summary:
+        return rows
+    # strip the heavy events/checkpoints for the drawer list; keep a few signals
+    out = []
+    for r in rows:
+        lite = {k: r.get(k) for k in _RUN_LITE}
+        lite["steps"] = len(r.get("tool_steps", []) or [])
+        lite["edits"] = len(r.get("checkpoints", []) or [])
+        todos = r.get("todos", []) or []
+        lite["todo"] = next((t.get("text") or t.get("title") for t in todos if isinstance(t, dict)), "")
+        lite["todos_total"] = len(todos)
+        lite["todos_done"] = sum(1 for t in todos if isinstance(t, dict) and t.get("status") == "done")
+        out.append(lite)
+    return out
+
+
+# declared before /agent/runs/{run_id} so "active"/"incomplete" aren't captured as run_ids
+@router.get("/agent/runs/active")
+def active_run(session_id: str = ""):
+    """the running agent run for a session (for reconnect/replay), or {} if none."""
+    return find_active_run(session_id) or {}
+
+
+@router.get("/agent/runs/incomplete")
+def incomplete_runs(limit: int = 20):
+    """runs that didn't finish cleanly (still running, or interrupted by a restart)."""
+    from services.agent_state import list_incomplete
+    return list_incomplete(limit)
 
 
 @router.get("/agent/runs/{run_id}")
@@ -61,3 +93,12 @@ def run_detail(run_id: str):
     if not run:
         raise HTTPException(404, "agent run not found")
     return run
+
+
+@router.get("/agent/runs/{run_id}/sources")
+def run_sources(run_id: str):
+    """provenance for a run — files touched, urls fetched, searches, commands."""
+    from services.agent_state import run_sources as _sources
+    if not get_run(run_id):
+        raise HTTPException(404, "agent run not found")
+    return _sources(run_id)

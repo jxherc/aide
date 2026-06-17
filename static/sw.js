@@ -1,6 +1,6 @@
-/* aide service worker — offline shell + web push */
+/* alles service worker — offline shell + web push */
 const VERSION = 'v3';   // bumped: vendor is now stale-while-revalidate (was cache-first → served stale bundles after a rebuild)
-const CACHE = `aide-${VERSION}`;
+const CACHE = `alles-${VERSION}`;
 
 self.addEventListener('install', () => self.skipWaiting());
 
@@ -55,8 +55,8 @@ self.addEventListener('fetch', e => {
 self.addEventListener('push', e => {
   let data = {};
   try { data = e.data.json(); }
-  catch { data = { title: 'aide', body: e.data ? e.data.text() : '' }; }
-  e.waitUntil(self.registration.showNotification(data.title || 'aide', {
+  catch { data = { title: 'alles', body: e.data ? e.data.text() : '' }; }
+  e.waitUntil(self.registration.showNotification(data.title || 'alles', {
     body: data.body || '',
     icon: '/static/icons/icon-192.png',
     badge: '/static/icons/icon-192.png',

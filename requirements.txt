@@ -8,6 +8,9 @@ sqlalchemy
 cryptography
 bcrypt                # password hashing (core/auth.py)
 fastembed
+beautifulsoup4        # research — html parsing
+trafilatura           # research — main-article extraction (strips nav/ads/boilerplate)
+ddgs                  # research — keyless web search (duckduckgo)
 # optional — computer use tools (screenshot/click/type). install if you enable it.
 # pyautogui
 # optional — offline voice input (local whisper STT). install if you enable it.

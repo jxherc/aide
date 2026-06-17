@@ -1,11 +1,12 @@
 import os
-from fastapi import APIRouter, HTTPException, Response, Cookie
+from fastapi import APIRouter, HTTPException, Response, Cookie, Request
 from pydantic import BaseModel
 from core.settings import load_settings, save_settings, base_domain
 from core.auth import (hash_password, verify_password,
                        create_session_token, store_token,
                        verify_session, revoke_token,
-                       make_handoff, redeem_handoff)
+                       make_handoff, redeem_handoff,
+                       login_blocked, record_login_fail, clear_login_fails)
 
 router = APIRouter(prefix="/api/auth")
 
@@ -30,7 +31,11 @@ class LoginBody(BaseModel):
 
 
 @router.post("/login")
-def login(body: LoginBody, response: Response):
+def login(body: LoginBody, response: Response, request: Request):
+    ip = request.client.host if request.client else "?"
+    if login_blocked(ip):
+        raise HTTPException(429, "too many attempts — wait a few minutes and try again")
+
     s = load_settings()
     hashed = s.get("auth_password_hash", "")
     if not hashed:
@@ -41,8 +46,10 @@ def login(body: LoginBody, response: Response):
         save_settings({"auth_password_hash": hashed})
 
     if not verify_password(body.password, hashed):
+        record_login_fail(ip)
         raise HTTPException(401, "invalid password")
 
+    clear_login_fails(ip)   # good login wipes the slate for this IP
     token = create_session_token()
     store_token(token)
     _set_session_cookie(response, token)
@@ -61,10 +68,74 @@ def logout(response: Response, aide_session: str | None = Cookie(None)):
 def me(aide_session: str | None = Cookie(None)):
     from core.settings import auth_enabled
     bd = base_domain()
+    username = load_settings().get("username", "")
     if not auth_enabled():
-        return {"enabled": False, "authenticated": True, "base_domain": bd}
+        return {"enabled": False, "authenticated": True, "base_domain": bd, "username": username}
     authed = bool(aide_session and verify_session(aide_session))
-    return {"enabled": True, "authenticated": authed, "base_domain": bd}
+    return {"enabled": True, "authenticated": authed, "base_domain": bd, "username": username}
+
+
+class ChangePwBody(BaseModel):
+    old_password: str = ""
+    new_password: str
+
+
+@router.post("/change-password")
+def change_password(body: ChangePwBody, request: Request):
+    if len(body.new_password) < 4:
+        raise HTTPException(400, "new password must be at least 4 characters")
+    s = load_settings()
+    hashed = s.get("auth_password_hash", "")
+    if not hashed:
+        env_pw = os.getenv("AUTH_PASSWORD", "")
+        hashed = hash_password(env_pw) if env_pw else ""
+    # if a password already exists, the current one must match. throttle this
+    # the same way as /login — otherwise it's an unmetered brute-force oracle
+    # for the master password (this endpoint sits under the auth-exempt prefix).
+    if hashed:
+        ip = request.client.host if request.client else "?"
+        if login_blocked(ip):
+            raise HTTPException(429, "too many attempts — wait a few minutes and try again")
+        if not verify_password(body.old_password, hashed):
+            record_login_fail(ip)
+            raise HTTPException(401, "current password is wrong")
+        clear_login_fails(ip)
+    save_settings({"auth_password_hash": hash_password(body.new_password)})
+    return {"ok": True}
+
+
+class AuthConfigBody(BaseModel):
+    enabled: bool
+    password: str = ""
+
+
+@router.post("/config")
+def set_auth_config(body: AuthConfigBody, request: Request):
+    """turn the password lock on/off from the UI (no file editing). enabling needs a
+    password to exist (or one supplied here); disabling needs the current password so a
+    random visitor can't just switch it off."""
+    s = load_settings()
+    hashed = s.get("auth_password_hash", "")
+    if body.enabled:
+        if body.password:
+            if len(body.password) < 4:
+                raise HTTPException(400, "password must be at least 4 characters")
+            hashed = hash_password(body.password)
+        if not hashed:
+            raise HTTPException(400, "set a password first, then enable the lock")
+        save_settings({"auth_password_hash": hashed, "auth_enabled": True})
+        return {"ok": True, "enabled": True}
+    # disabling
+    if hashed:
+        ip = request.client.host if request.client else "?"
+        if login_blocked(ip):
+            raise HTTPException(429, "too many attempts — wait a few minutes and try again")
+        if not verify_password(body.password, hashed):
+            record_login_fail(ip)
+            raise HTTPException(401, "current password required to disable the lock")
+        clear_login_fails(ip)
+    save_settings({"auth_enabled": False})
+    return {"ok": True, "enabled": False}
 
 
 # cross-subdomain SSO: an authed subdomain mints a one-time code; the target

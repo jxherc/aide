@@ -1,6 +1,103 @@
+import asyncio
+import json
+import tempfile
 import unittest
+from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
 
 from services import agent_runtime as ar
+from services import agent_state
+
+
+class _Stop:
+    def is_set(self):
+        return False
+
+
+def _make_fake(behaviors):
+    """fake stream_chat that yields a scripted chunk list per successive call."""
+    state = {"n": 0}
+
+    async def fake(messages, base_url, api_key, model, **kw):
+        i = state["n"]
+        state["n"] += 1
+        for ch in (behaviors[i] if i < len(behaviors) else behaviors[-1]):
+            yield ch
+    return fake, state
+
+
+def _drive(behaviors, settings=None):
+    fake, state = _make_fake(behaviors)
+    ep = SimpleNamespace(base_url="http://x/", api_key="k")
+    s = {"agent_context_files": False}
+    if settings:
+        s.update(settings)
+    with tempfile.TemporaryDirectory() as d:
+        with mock.patch.object(agent_state, "DATA_DIR", Path(d)), \
+             mock.patch.object(ar, "stream_chat", fake), \
+             mock.patch.object(ar, "LLM_RETRY_BASE", 0):
+            async def go():
+                chunks = []
+                async for ch in ar.run_agent([{"role": "user", "content": "hi"}], ep, "m",
+                                             _Stop(), s, [], [], [], session_id="s"):
+                    chunks.append(ch)
+                return chunks
+            chunks = asyncio.run(go())
+            rid = next(c["agent_run"]["id"] for c in chunks if "agent_run" in c)
+            status = agent_state.get_run(rid)["status"]
+    return status, state["n"], chunks
+
+
+class LlmResilienceTests(unittest.TestCase):
+    def test_retryable_classification(self):
+        self.assertTrue(ar._retryable(""))                  # empty/transient
+        self.assertTrue(ar._retryable("can't connect to host"))
+        self.assertTrue(ar._retryable("HTTP 503: bad gateway"))
+        self.assertTrue(ar._retryable("HTTP 429: rate limited"))
+        self.assertFalse(ar._retryable("HTTP 400: bad request"))
+        self.assertFalse(ar._retryable("HTTP 401: unauthorized"))
+
+    def test_transient_error_retries_and_recovers(self):
+        # 1st call blips (empty error), 2nd succeeds with no tool calls → 'done'
+        status, calls, _ = _drive([[{"error": ""}], [{"done": True, "usage": {}}]])
+        self.assertEqual(status, "done")
+        self.assertEqual(calls, 2)            # it retried instead of aborting
+
+    def test_unrecoverable_after_work_is_stopped_not_error(self):
+        tc = {"call_id": "c1", "name": "todo_update", "args": {"items": [{"step": "x", "status": "in_progress"}]}}
+        status, _, _ = _drive([[{"tool_call": tc}, {"done": True}], [{"error": "HTTP 400: bad"}]])
+        self.assertEqual(status, "stopped")   # work landed → interrupted, not a clean failure
+
+    def test_immediate_unrecoverable_with_no_work_is_error(self):
+        status, calls, _ = _drive([[{"error": "HTTP 400: bad"}]])   # non-retryable, nothing done
+        self.assertEqual(status, "error")
+        self.assertEqual(calls, 1)            # no pointless retry on a 4xx
+
+
+class CapToolContentTests(unittest.TestCase):
+    def test_large_output_stays_valid_json(self):
+        tc = {"output": "Z" * 50000, "error": False}
+        content = ar._cap_tool_content(tc)
+        # the old bug: sliced the json string + tacked on `"}` → unparseable
+        parsed = json.loads(content)   # must not raise
+        self.assertFalse(parsed["error"])
+        self.assertIn("truncated for context", parsed["output"])
+        self.assertLess(len(content), 20000)
+        # head AND tail of the original are preserved
+        self.assertTrue(parsed["output"].startswith("Z"))
+        self.assertTrue(parsed["output"].rstrip().endswith("Z"))
+
+    def test_small_output_untouched(self):
+        tc = {"output": "hello", "error": False}
+        self.assertEqual(json.loads(ar._cap_tool_content(tc)), tc)
+
+    def test_hist_chars_counts_image_urls(self):
+        msgs = [{"role": "user", "content": [
+            {"type": "text", "text": "hi"},
+            {"type": "image_url", "image_url": {"url": "data:image/png;base64," + "A" * 5000}},
+        ]}]
+        self.assertGreaterEqual(ar._hist_chars(msgs), 5000)
 
 
 class TrimHistoryTests(unittest.TestCase):
@@ -37,6 +134,15 @@ class EffortTurnsTests(unittest.TestCase):
         note_high = ar.agent_system_note({"agent_effort": "high"})
         self.assertIn("EFFORT: low", note_low)
         self.assertIn("EFFORT: high", note_high)
+
+    def test_effort_guides_tool_selection(self):
+        # claude-code-style: low effort biases to glob/grep, high maps structure first
+        self.assertIn("glob/grep", ar.agent_system_note({"agent_effort": "low"}))
+        self.assertIn("code_symbols", ar.agent_system_note({"agent_effort": "high"}))
+
+    def test_note_has_file_creation_discipline(self):
+        note = ar.agent_system_note({})
+        self.assertIn("never create docs/README/boilerplate unless asked", note)
 
 
 if __name__ == "__main__":

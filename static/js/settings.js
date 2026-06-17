@@ -7,7 +7,7 @@ import {
   sensitiveBlurEnabled, textOnlyEmojisEnabled, welcomeEnabled,
   setSensitiveBlur, setTextOnlyEmojis, setWelcomeEnabled,
 } from './privacy.js';
-import { loadShortcuts, saveShortcuts, eventToShortcut } from './shortcuts.js';
+import { loadShortcuts, saveShortcuts, eventToShortcut, isReservedShortcut } from './shortcuts.js';
 
 // ── visibility prefs (appearance toggles) ────────────────────────────────────
 const VIS_KEY = 'aide-ui-vis';
@@ -72,8 +72,7 @@ function _onPaneOpen(name) {
   if (name === 'appearance') loadAppearancePane();
   if (name === 'voice')      loadVoicePane();
   if (name === 'personas')   { loadPersonas(); loadCookbook(); }
-  if (name === 'templates')  loadTemplatesPane();
-  if (name === 'tools')      { loadAgentStatus(); loadMcpServers(); loadConnections(); }
+  if (name === 'tools')      { loadAgentStatus(); loadMcpServers(); loadConnections(); loadPermRules(); }
   if (name === 'developer')  { loadTokens(); loadWebhooks(); loadShortcutSettings(); }
   if (name === 'rules')      loadRulesPane();
 }
@@ -81,10 +80,15 @@ function _onPaneOpen(name) {
 // ── open / close ──────────────────────────────────────────────────────────────
 let _bound = false;
 
-export function openSettings(pane = 'models') {
+export function openSettings(pane, allesOnly = false) {
   const modal = document.getElementById('settings-modal');
   if (!modal) return;
   modal.style.display = 'flex';
+  // hub/home settings = alles-wide only (appearance + backup); aide keeps the full set
+  modal.classList.toggle('alles-scope', allesOnly);
+  const title = document.querySelector('#settings-modal .s-title');
+  if (title) title.textContent = allesOnly ? 'alles settings' : 'settings';
+  if (!pane) pane = allesOnly ? 'appearance' : 'models';
   if (!_bound) { _initSettings(); _bound = true; }
   // update compat url labels
   const port = location.port || '8000';
@@ -171,11 +175,6 @@ function _initSettings() {
   // ── voice pane ──
   document.getElementById('s-voice-save-btn')?.addEventListener('click', saveVoiceSettings);
   document.getElementById('tts-select')?.addEventListener('change', _updateTtsVoiceRow);
-  document.getElementById('s-tts-speed')?.addEventListener('input', e => {
-    const v = parseFloat(e.target.value).toFixed(1);
-    const label = document.getElementById('s-tts-speed-val');
-    if (label) label.textContent = `${v}×`;
-  });
 
   // ── appearance: vis toggles ──
   document.querySelectorAll('.s-vis-toggle').forEach(sw => {
@@ -199,6 +198,17 @@ function _initSettings() {
 
   // ── personas / cookbook ──
   document.getElementById('persona-add-btn')?.addEventListener('click', addPersona);
+  document.getElementById('persona-cancel-btn')?.addEventListener('click', _resetPersonaForm);
+  const _tempBar = document.getElementById('persona-temp');
+  _tempBar?.addEventListener('pointerdown', _onTempPointer);
+  _tempBar?.addEventListener('pointermove', _onTempPointer);
+  document.getElementById('persona-temp-pin')?.addEventListener('click', _togglePersonaTempPin);
+  _renderTempBar();   // paint the empty/auto track on first open
+  document.getElementById('persona-default')?.addEventListener('click', e => e.currentTarget.classList.toggle('on'));
+  document.getElementById('persona-mode')?.addEventListener('click', e => {
+    const opt = e.target.closest('.seg-opt'); if (!opt) return;
+    opt.parentElement.querySelectorAll('.seg-opt').forEach(o => o.classList.toggle('active', o === opt));
+  });
   document.getElementById('cookbook-add-btn')?.addEventListener('click', addCookbookEntry);
 
   // ── tools (mcp) ──
@@ -227,14 +237,19 @@ function _initSettings() {
     inp.addEventListener('keydown', e => {
       e.preventDefault();
       e.stopPropagation();
+      if (e.key === 'Escape') {              // Esc → no shortcut for this action
+        inp.value = '';
+        saveShortcuts({ [inp.dataset.shortcut]: '' });
+        toast('shortcut cleared', '');
+        inp.blur();
+        return;
+      }
       const combo = eventToShortcut(e);
       if (!combo) return;
+      if (isReservedShortcut(combo)) { toast(`${combo} is a system/browser shortcut — pick another`, 'error'); return; }
       inp.value = combo;
       saveShortcuts({ [inp.dataset.shortcut]: combo });
       toast('shortcut saved', 'success');
-    });
-    inp.addEventListener('blur', () => {
-      if (inp.value.trim()) saveShortcuts({ [inp.dataset.shortcut]: inp.value.trim() });
     });
   });
 }
@@ -649,11 +664,15 @@ function applyAccent(hex) {
     localStorage.removeItem('aide-accent');
   }
   _markAccent();
+  window._updateFavicon?.();
+  _patchSettings({ accent: hex || '' });   // persist server-side → same accent on every subdomain
 }
 function applyThemeMode(mode) {
   if (mode === 'light') { document.documentElement.dataset.theme = 'light'; localStorage.setItem('aide-theme', 'light'); }
   else { delete document.documentElement.dataset.theme; localStorage.removeItem('aide-theme'); }
   document.querySelectorAll('.theme-mode-btn').forEach(b => b.classList.toggle('active', b.dataset.themeMode === (mode === 'light' ? 'light' : 'dark')));
+  window._updateFavicon?.();
+  _patchSettings({ theme: mode === 'light' ? 'light' : '' });   // persist server-side → synced
 }
 function _markAccent() {
   const cur = _curAccent();
@@ -691,6 +710,53 @@ function _loadThemeColorControls() {
   const reset = document.getElementById('s-accent-reset');
   if (reset && !reset.dataset.bound) { reset.dataset.bound = '1'; reset.addEventListener('click', () => applyAccent(null)); }
   _markAccent();
+
+  // username (server-synced) — bind once
+  const uname = document.getElementById('s-username');
+  if (uname && !uname.dataset.bound) {
+    uname.dataset.bound = '1';
+    fetch('/api/auth/me').then(r => r.json()).then(m => { uname.value = m.username || ''; }).catch(() => {});
+    let t; uname.addEventListener('input', () => { clearTimeout(t); t = setTimeout(() => _patchSettings({ username: uname.value.trim() }), 400); });
+  }
+  // change password — bind once
+  const pwBtn = document.getElementById('s-pw-save');
+  if (pwBtn && !pwBtn.dataset.bound) {
+    pwBtn.dataset.bound = '1';
+    pwBtn.addEventListener('click', async () => {
+      const oldp = document.getElementById('s-pw-old').value;
+      const newp = document.getElementById('s-pw-new').value;
+      const conf = document.getElementById('s-pw-new2')?.value ?? '';
+      if (newp.length < 4) { toast('new password must be at least 4 characters', 'error'); return; }
+      if (newp !== conf) { toast("passwords don't match", 'error'); return; }
+      try {
+        const r = await fetch('/api/auth/change-password', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ old_password: oldp, new_password: newp }) });
+        if (!r.ok) { toast((await r.json().catch(() => ({}))).detail || 'change failed', 'error'); return; }
+        toast('password changed', 'success');
+        document.getElementById('s-pw-old').value = '';
+        document.getElementById('s-pw-new').value = '';
+        const c = document.getElementById('s-pw-new2'); if (c) c.value = '';
+      } catch { toast('failed to change password', 'error'); }
+    });
+  }
+
+  // password-lock toggle (enable/disable auth from the UI, no file editing) — bind once
+  const authSw = document.getElementById('s-auth-enable');
+  if (authSw && !authSw.dataset.bound) {
+    authSw.dataset.bound = '1';
+    fetch('/api/auth/me').then(r => r.json()).then(m => _setSwitch(authSw, !!m.enabled)).catch(() => {});
+    authSw.addEventListener('click', async () => {
+      const turnOn = !authSw.classList.contains('on');
+      // enabling uses the new-password field (to set one if none); disabling uses current
+      const password = document.getElementById(turnOn ? 's-pw-new' : 's-pw-old')?.value || '';
+      try {
+        const r = await fetch('/api/auth/config', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ enabled: turnOn, password }) });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) { toast(d.detail || 'could not change the lock', 'error'); return; }
+        _setSwitch(authSw, d.enabled);
+        toast(d.enabled ? 'password lock on' : 'password lock off', 'success');
+      } catch { toast('could not change the lock', 'error'); }
+    });
+  }
 }
 
 // (end loadAppearancePane helper)
@@ -711,6 +777,8 @@ function loadShortcutSettings() {
   const shortcuts = loadShortcuts();
   document.querySelectorAll('.shortcut-input').forEach(inp => {
     inp.value = shortcuts[inp.dataset.shortcut] || '';
+    inp.placeholder = 'press keys · Esc = none';
+    inp.readOnly = true;   // it's a key-capture field, not free text
   });
 }
 
@@ -727,18 +795,38 @@ async function loadVoicePane() {
     if (s.openai_api_key) document.getElementById('settings-openai-key').value = s.openai_api_key;
     const langEl = document.getElementById('s-stt-language');
     if (langEl && s.stt_language) langEl.value = s.stt_language;
-    const speedEl = document.getElementById('s-tts-speed');
-    if (speedEl) {
-      speedEl.value = s.tts_speed ?? 1.0;
-      const label = document.getElementById('s-tts-speed-val');
-      if (label) label.textContent = `${parseFloat(speedEl.value).toFixed(1)}×`;
-    }
+    setDropdownValue(document.getElementById('s-tts-speed'), String(s.tts_speed ?? 1));
     _bindSwitchOnce(document.getElementById('s-tts-enabled-toggle'),
       () => !!(s.tts_auto_play),
       async on => { await _patchSettings({ tts_auto_play: on }); }
     );
     _updateTtsVoiceRow();
   } catch {}
+  _loadMicDevices();
+}
+
+// populate the microphone picker. device labels are hidden until mic permission is
+// granted, so if they're blank we ask once (then drop the stream) to reveal them.
+async function _loadMicDevices() {
+  const el = document.getElementById('s-mic-select');
+  if (!el || !navigator.mediaDevices?.enumerateDevices) return;
+  let mics = (await navigator.mediaDevices.enumerateDevices().catch(() => []))
+    .filter(d => d.kind === 'audioinput');
+  if (mics.length && !mics.some(m => m.label)) {
+    try {
+      const s = await navigator.mediaDevices.getUserMedia({ audio: true });
+      s.getTracks().forEach(t => t.stop());
+      mics = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'audioinput');
+    } catch {}
+  }
+  const opts = [{ value: '', label: 'default microphone' },
+    ...mics.map((m, i) => ({ value: m.deviceId, label: m.label || `microphone ${i + 1}` }))];
+  const saved = localStorage.getItem('alles-mic-id') || '';
+  populateDropdown(el, opts, opts.some(o => o.value === saved) ? saved : '');
+  if (!el.dataset.micBound) {
+    el.dataset.micBound = '1';
+    el.addEventListener('change', () => localStorage.setItem('alles-mic-id', getDropdownValue(el) || ''));
+  }
 }
 
 function _updateTtsVoiceRow() {
@@ -762,33 +850,218 @@ async function saveVoiceSettings() {
 }
 
 // ── personas ──────────────────────────────────────────────────────────────────
+let _personaCache = [];
+let _editingPersona = null;
+
+// ── temperature: btop-style block meter (null = auto/provider default) ──
+// 0..2 in hard 0.1 steps. each lit cell is coloured by its POSITION on the scale,
+// in discrete bands (cold blue → hot red) — no smooth blend, snaps to a cell.
+const TEMP_CELLS = 20;
+const TEMP_STEP  = 0.1;
+const TEMP_RAMP  = ['#3b82f6','#6366f1','#8b5cf6','#a855f7','#d946ef','#f43f5e','#ef4444'];
+let _tempVal = 0.7, _tempOn = false;
+
+// snap to nearest 0.1, rounded clean so we don't store float cruft like 0.70000001
+const _tempSnap = v => Math.max(0, Math.min(2, Math.round(v * 10) / 10));
+// colour by cell index — floor into the ramp so neighbouring cells share a band
+const _tempCellColor = i => TEMP_RAMP[Math.min(TEMP_RAMP.length - 1, Math.floor(i / TEMP_CELLS * TEMP_RAMP.length))];
+
+function _renderTempBar() {
+  const bar = document.getElementById('persona-temp');
+  const lbl = document.getElementById('persona-temp-val');
+  if (!bar) return;
+  bar.classList.toggle('is-auto', !_tempOn);
+  bar.setAttribute('aria-valuenow', _tempOn ? _tempVal.toFixed(1) : '');
+  const lit = Math.round(_tempVal / TEMP_STEP);   // cells filled, 0..20
+  let html = '';
+  for (let i = 0; i < TEMP_CELLS; i++) {
+    if (i < lit) {
+      const c = _tempCellColor(i);
+      html += `<span class="tc f${i === lit - 1 ? ' edge' : ''}" style="background:${c}"></span>`;
+    } else {
+      html += '<span class="tc"></span>';
+    }
+  }
+  bar.innerHTML = html;
+  if (lbl) {
+    lbl.textContent = _tempOn ? _tempVal.toFixed(1) : 'auto';
+    lbl.classList.toggle('muted', !_tempOn);
+    lbl.style.color = _tempOn ? _tempCellColor(Math.max(0, lit - 1)) : '';
+  }
+}
+
+function _setPersonaTemp(val) {
+  _tempOn = val != null;
+  if (_tempOn) _tempVal = _tempSnap(val);
+  document.getElementById('persona-temp-pin')?.classList.toggle('on', _tempOn);
+  _renderTempBar();
+}
+
+// pointer x along the bar → snapped temperature
+function _tempFromEvent(e) {
+  const r = document.getElementById('persona-temp').getBoundingClientRect();
+  const f = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+  return _tempSnap(f * 2);
+}
+// click or drag a cell → pins and sets. pointermove only counts while held down.
+function _onTempPointer(e) {
+  if (e.type === 'pointermove' && e.buttons !== 1) return;
+  e.preventDefault();
+  if (e.type === 'pointerdown') e.currentTarget.setPointerCapture?.(e.pointerId);
+  _tempOn = true;
+  _tempVal = _tempFromEvent(e);
+  document.getElementById('persona-temp-pin')?.classList.add('on');
+  _renderTempBar();
+}
+
+function _setPersonaMode(val) {
+  document.querySelectorAll('#persona-mode .seg-opt').forEach(o =>
+    o.classList.toggle('active', (o.dataset.val || '') === (val || '')));
+}
+function _getPersonaMode() {
+  return document.querySelector('#persona-mode .seg-opt.active')?.dataset.val || '';
+}
+
+// curated persona accent palette. deliberately NO green / red — those carry "right vs
+// wrong" (success/error) meaning across the app, so a green/red accent would read as a
+// state signal, not a persona's identity. anything added here later should hold that line.
+const PERSONA_ACCENTS = [
+  ['#818cf8','indigo'], ['#a78bfa','violet'], ['#c084fc','purple'], ['#60a5fa','blue'],
+  ['#38bdf8','sky'],    ['#22d3ee','cyan'],   ['#fbbf24','amber'],  ['#fb923c','orange'],
+  ['#f472b6','pink'],   ['#e879f9','fuchsia'],['#94a3b8','slate'],
+];
+let _personaAccent = '';
+
+function _buildPersonaAccents() {
+  const box = document.getElementById('persona-accent');
+  if (!box || box.dataset.built) return;
+  box.dataset.built = '1';
+  box.innerHTML =
+    '<button type="button" class="pa-swatch pa-none" data-hex="" title="no override — use your theme accent">default</button>' +
+    PERSONA_ACCENTS.map(([hex, name]) =>
+      `<button type="button" class="pa-swatch" data-hex="${hex}" title="${name}" style="background:${hex}"></button>`).join('');
+  box.querySelectorAll('.pa-swatch').forEach(s => s.addEventListener('click', () => {
+    _setPersonaAccent(s.dataset.hex);
+    // live preview the re-theme as you pick (reset/save restores the real active accent)
+    document.documentElement.style.setProperty('--accent', s.dataset.hex || (localStorage.getItem('aide-accent') || '#818cf8'));
+  }));
+}
+
+function _setPersonaAccent(hex) {
+  _personaAccent = hex || '';
+  document.querySelectorAll('#persona-accent .pa-swatch').forEach(s =>
+    s.classList.toggle('active', (s.dataset.hex || '') === _personaAccent));
+}
+function _getPersonaAccent() { return _personaAccent; }
+
+function _togglePersonaTempPin() {
+  const on = !document.getElementById('persona-temp-pin').classList.contains('on');
+  _setPersonaTemp(on ? (_tempVal || 0.7) : null);
+}
+
+function _fillPersonaModels(selected = '') {
+  const sel = document.getElementById('persona-model');
+  if (!sel) return;
+  const eps = window._endpoints || [];
+  let html = '<option value="">— use chat\'s model</option>';
+  for (const ep of eps) {
+    for (const m of (ep.models || [])) html += `<option value="${_esc(m)}">${_esc(m)}</option>`;
+  }
+  // keep a pinned model that isn't in any endpoint's list (e.g. a renamed/removed one)
+  if (selected && !eps.some(ep => (ep.models || []).includes(selected)))
+    html += `<option value="${_esc(selected)}">${_esc(selected)} (not in any endpoint)</option>`;
+  sel.innerHTML = html;
+  sel.value = selected || '';
+}
+
 export async function loadPersonas() {
   const el = document.getElementById('persona-list');
   if (!el) return;
-  const personas = await fetch('/api/personas').then(r => r.json()).catch(() => []);
-  if (!personas.length) { el.innerHTML = '<div class="settings-row-empty">no personas yet</div>'; return; }
-  el.innerHTML = personas.map(p => `
-    <div class="settings-list-row">
-      <span class="row-name">${_esc(p.name)}</span>
-      <span class="row-meta">${_esc((p.system_prompt||'').slice(0,40))}${p.system_prompt?.length>40?'…':''}</span>
-      <button class="act-btn" data-id="${p.id}" onclick="window._rmPersona(this)">remove</button>
-    </div>`).join('');
+  _fillPersonaModels(document.getElementById('persona-model')?.value || '');
+  _buildPersonaAccents();
+  _personaCache = await fetch('/api/personas').then(r => r.json()).catch(() => []);
+  if (!_personaCache.length) { el.innerHTML = '<div class="settings-row-empty">no personas yet</div>'; return; }
+  el.innerHTML = _personaCache.map(p => {
+    const prev = (p.system_prompt || '').replace(/\s+/g, ' ').trim();
+    return `
+    <div class="settings-list-row persona-row${_editingPersona === p.id ? ' editing' : ''}" data-id="${p.id}" onclick="window._editPersona('${p.id}')">
+      <span class="row-name">${_esc(p.name)}${p.is_default ? ' <span class="row-tag">default</span>' : ''}</span>
+      <span class="row-meta">${_esc(prev.slice(0, 60))}${prev.length > 60 ? '…' : ''}</span>
+      <button class="act-btn" data-id="${p.id}" onclick="event.stopPropagation();window._dupPersona('${p.id}')">duplicate</button>
+      <button class="act-btn" data-id="${p.id}" onclick="event.stopPropagation();window._rmPersona(this)">remove</button>
+    </div>`;
+  }).join('');
+}
+
+window._editPersona = id => {
+  const p = _personaCache.find(x => x.id === id);
+  if (!p) return;
+  _editingPersona = id;
+  document.getElementById('persona-name').value   = p.name || '';
+  document.getElementById('persona-prompt').value = p.system_prompt || '';
+  const initEl = document.getElementById('persona-initial'); if (initEl) initEl.value = p.initial_message || '';
+  _fillPersonaModels(p.model || '');
+  _setPersonaTemp(p.temperature == null ? null : p.temperature);
+  _setPersonaMode(p.default_mode || '');
+  _buildPersonaAccents(); _setPersonaAccent(p.accent || '');
+  document.getElementById('persona-default')?.classList.toggle('on', !!p.is_default);
+  const title = document.getElementById('persona-form-title');
+  if (title) { title.textContent = `editing "${p.name}"`; title.hidden = false; }
+  document.getElementById('persona-add-btn').textContent = 'save changes';
+  document.getElementById('persona-cancel-btn').hidden = false;
+  loadPersonas();   // re-render so the active row highlights
+  document.getElementById('persona-prompt').focus();
+};
+
+function _resetPersonaForm() {
+  _editingPersona = null;
+  ['persona-name','persona-prompt','persona-initial'].forEach(id => { const e = document.getElementById(id); if (e) e.value = ''; });
+  _fillPersonaModels('');
+  _setPersonaTemp(null);
+  _setPersonaMode('');
+  _setPersonaAccent('');
+  document.getElementById('persona-default')?.classList.remove('on');
+  window._refreshPersonaBtn?.();   // restore the live accent to the active session's persona
+  const title = document.getElementById('persona-form-title'); if (title) title.hidden = true;
+  document.getElementById('persona-add-btn').textContent = 'add persona';
+  document.getElementById('persona-cancel-btn').hidden = true;
+  loadPersonas();
 }
 
 window._rmPersona = async btn => {
   await fetch(`/api/personas/${btn.dataset.id}`, { method: 'DELETE' });
-  loadPersonas();
+  if (_editingPersona === btn.dataset.id) _resetPersonaForm();
+  else loadPersonas();
+  window._refreshPersonaBtn?.();
+};
+
+window._dupPersona = async id => {
+  const r = await fetch(`/api/personas/${id}/duplicate`, { method: 'POST' });
+  if (r.ok) { toast('duplicated', 'success'); loadPersonas(); window._refreshPersonaBtn?.(); }
 };
 
 async function addPersona() {
   const name   = document.getElementById('persona-name').value.trim();
   const prompt = document.getElementById('persona-prompt').value.trim();
+  const initial_message = document.getElementById('persona-initial')?.value.trim() || '';
+  const model  = document.getElementById('persona-model')?.value || '';
+  const temperature = _tempOn ? _tempVal : null;
+  const is_default = !!document.getElementById('persona-default')?.classList.contains('on');
+  const default_mode = _getPersonaMode();
+  const accent = _getPersonaAccent();
   if (!name) { toast('name required', 'error'); return; }
-  await fetch('/api/personas', { method: 'POST', headers: {'content-type':'application/json'},
-    body: JSON.stringify({ name, emoji: '', system_prompt: prompt }) });
-  ['persona-name','persona-prompt'].forEach(id => document.getElementById(id).value = '');
-  toast('persona added', 'success');
-  loadPersonas();
+  const payload = { name, system_prompt: prompt, initial_message, model, temperature, default_mode, accent, is_default };
+  if (_editingPersona) {
+    await fetch(`/api/personas/${_editingPersona}`, { method: 'PATCH', headers: {'content-type':'application/json'},
+      body: JSON.stringify(payload) });
+    toast('persona updated', 'success');
+  } else {
+    await fetch('/api/personas', { method: 'POST', headers: {'content-type':'application/json'},
+      body: JSON.stringify(payload) });
+    toast('persona added', 'success');
+  }
+  _resetPersonaForm();
+  window._refreshPersonaBtn?.();
 }
 
 // ── cookbook ──────────────────────────────────────────────────────────────────
@@ -822,64 +1095,8 @@ async function addCookbookEntry() {
   loadCookbook();
 }
 
-// ── templates ─────────────────────────────────────────────────────────────────
-async function loadTemplatesPane() {
-  const el = document.getElementById('template-list');
-  if (!el) return;
-  const templates = await fetch('/api/templates').then(r => r.json()).catch(() => []);
-  if (!templates.length) { el.innerHTML = '<div class="settings-row-empty">no templates yet</div>'; return; }
-  el.innerHTML = templates.map(t => `
-    <div class="settings-list-row">
-      <div style="flex:1;min-width:0">
-        <div class="row-name">${_esc(t.name)}</div>
-        ${t.system_prompt ? `<div style="font-size:0.68rem;color:var(--muted);margin-top:2px">${_esc(t.system_prompt.slice(0,50))}${t.system_prompt.length>50?'…':''}</div>` : ''}
-      </div>
-      <button class="btn" data-id="${t.id}" onclick="window._useTemplate('${t.id}')">use</button>
-      <button class="act-btn" data-id="${t.id}" onclick="window._rmTemplate('${t.id}')">×</button>
-    </div>`).join('');
-
-  // init template add button once
-  const addBtn = document.getElementById('tpl-add-btn');
-  if (addBtn && !addBtn.dataset.bound) {
-    addBtn.dataset.bound = '1';
-    addBtn.addEventListener('click', async () => {
-      const name = document.getElementById('tpl-name').value.trim();
-      const sys  = document.getElementById('tpl-system').value.trim();
-      const msg  = document.getElementById('tpl-message').value.trim();
-      if (!name) { toast('name required', 'error'); return; }
-      await fetch('/api/templates', { method: 'POST', headers: {'content-type':'application/json'},
-        body: JSON.stringify({ name, system_prompt: sys, initial_message: msg }) });
-      ['tpl-name','tpl-system','tpl-message'].forEach(id => document.getElementById(id).value = '');
-      toast('template saved', 'success');
-      loadTemplatesPane();
-    });
-  }
-}
-
-window._rmTemplate = async id => {
-  await fetch(`/api/templates/${id}`, { method: 'DELETE' });
-  document.getElementById('template-list') && loadTemplatesPane();
-};
-
-window._useTemplate = async id => {
-  const r = await fetch('/api/templates');
-  const templates = await r.json();
-  const t = templates.find(x => x.id === id);
-  if (!t) return;
-  // apply: set system prompt + pre-fill composer
-  if (t.system_prompt) {
-    await fetch('/api/settings', { method: 'PATCH', headers: {'content-type':'application/json'},
-      body: JSON.stringify({ system_prompt: t.system_prompt }) });
-    toast(`template "${t.name}" applied`, 'success');
-  }
-  if (t.initial_message) {
-    const ta = document.getElementById('composer-ta');
-    if (ta) { ta.value = t.initial_message; ta.focus(); ta.dispatchEvent(new Event('input')); }
-  }
-  // close settings
-  const { closeSettings } = await import('./settings.js');
-  closeSettings();
-};
+// (session templates were merged into personas — a persona's "starter message" now
+//  does what a template's initial message did; see openPersonaPicker in app.js)
 
 // ── agent + mcp servers ───────────────────────────────────────────────────────
 async function loadAgentStatus() {
@@ -1117,9 +1334,60 @@ function _escAttr(s = '') {
   return _esc(s).replace(/"/g,'&quot;');
 }
 
+// ── permission rules: per-tool/path allow|ask|deny, layered over the agent mode ──
+let _permRules = [];
+let _permWired = false;
+async function loadPermRules() {
+  try { _permRules = (await fetch('/api/settings').then(r => r.json())).permission_rules || []; }
+  catch { _permRules = []; }
+  const el = document.getElementById('perm-rules-list');
+  if (el) {
+    el.innerHTML = _permRules.length
+      ? _permRules.map((r, i) => `
+        <div class="perm-rule-row">
+          <span class="perm-rule-act perm-${_esc(r.action)}">${_esc(r.action)}</span>
+          <span class="perm-rule-tool">${_esc(r.tool || '*')}</span>
+          ${r.path ? `<span class="perm-rule-path">${_esc(r.path)}</span>` : ''}
+          <button class="perm-rule-del" data-i="${i}" title="remove">✕</button>
+        </div>`).join('')
+      : '<div style="font-size:0.72rem;color:var(--muted)">no rules — the agent follows the mode for everything</div>';
+    el.querySelectorAll('.perm-rule-del').forEach(b => b.onclick = () => _delPermRule(+b.dataset.i));
+  }
+  if (!_permWired) {
+    _permWired = true;
+    document.getElementById('perm-rule-add-btn')?.addEventListener('click', _addPermRule);
+  }
+}
+async function _addPermRule() {
+  const tool = document.getElementById('perm-rule-tool').value.trim();
+  const path = document.getElementById('perm-rule-path').value.trim();
+  const action = getDropdownValue(document.getElementById('perm-rule-action')) || 'ask';
+  if (!tool) { toast('tool pattern required (use * for any)', 'error'); return; }
+  _permRules.push({ tool, path, action });
+  await _patchSettings({ permission_rules: _permRules });
+  document.getElementById('perm-rule-tool').value = '';
+  document.getElementById('perm-rule-path').value = '';
+  toast('rule added', 'success');
+  loadPermRules();
+}
+async function _delPermRule(i) {
+  _permRules.splice(i, 1);
+  await _patchSettings({ permission_rules: _permRules });
+  loadPermRules();
+}
+
 // ── rules pane: personal automations ──────────────────────────────────────────
 let _ruleOpts = null;
 let _rulesWired = false;
+let _editingRule = null;   // rule id being edited (null = adding a new one)
+
+// one-click starting points — prefill the form with a sensible rule to tweak
+const _RULE_PRESETS = [
+  { label: '☀ morning digest', trigger: 'daily_at', trigger_arg: '08:00', action: 'push_digest', action_arg: '', name: 'morning digest' },
+  { label: '📥 important email → task', trigger: 'mail_from', trigger_arg: '', action: 'create_task', action_arg: '{subject} — from {from}', name: '' },
+  { label: '💳 renewal heads-up', trigger: 'sub_renewing', trigger_arg: '3', action: 'push', action_arg: '{name} renews in 3 days', name: 'renewal reminder' },
+  { label: '📅 upcoming day', trigger: 'day_event_near', trigger_arg: '7', action: 'push', action_arg: '{name} is in a week', name: '' },
+];
 
 async function loadRulesPane() {
   if (!_ruleOpts) {
@@ -1147,8 +1415,40 @@ async function loadRulesPane() {
   if (!_rulesWired) {
     _rulesWired = true;
     document.getElementById('rule-add-btn')?.addEventListener('click', _addRule);
+    document.getElementById('rule-cancel-btn')?.addEventListener('click', _resetRuleForm);
+    _renderRulePresets();
   }
   _renderRules();
+}
+
+function _renderRulePresets() {
+  const box = document.getElementById('rule-presets');
+  if (!box) return;
+  box.innerHTML = '<span class="rule-presets-label">quick start:</span>' +
+    _RULE_PRESETS.map((p, i) => `<button class="rule-preset" data-i="${i}">${p.label}</button>`).join('');
+  box.querySelectorAll('.rule-preset').forEach(b =>
+    b.addEventListener('click', () => _fillRuleForm(_RULE_PRESETS[+b.dataset.i], null)));
+}
+
+// load a rule (or preset) into the form. id=null → adding/preset; id set → editing
+function _fillRuleForm(r, id) {
+  _editingRule = id;
+  setDropdownValue(document.getElementById('rule-trigger'), r.trigger);
+  setDropdownValue(document.getElementById('rule-action'), r.action);
+  document.getElementById('rule-trigger-arg').value = r.trigger_arg || '';
+  document.getElementById('rule-action-arg').value = r.action_arg || '';
+  document.getElementById('rule-name').value = r.name || '';
+  document.getElementById('rule-trigger')?.dispatchEvent(new Event('change'));   // sync placeholders
+  document.getElementById('rule-action')?.dispatchEvent(new Event('change'));
+  document.getElementById('rule-add-btn').textContent = id ? 'save changes' : 'add rule';
+  document.getElementById('rule-cancel-btn').style.display = id ? '' : 'none';
+}
+
+function _resetRuleForm() {
+  _editingRule = null;
+  ['rule-trigger-arg', 'rule-action-arg', 'rule-name'].forEach(id => { const e = document.getElementById(id); if (e) e.value = ''; });
+  document.getElementById('rule-add-btn').textContent = 'add rule';
+  document.getElementById('rule-cancel-btn').style.display = 'none';
 }
 
 async function _renderRules() {
@@ -1173,6 +1473,10 @@ async function _renderRules() {
     </div>`).join('');
   el.querySelectorAll('.rule-row').forEach(row => {
     const id = row.dataset.id;
+    row.querySelector('.rule-row-main')?.addEventListener('click', () => {
+      const r = rules.find(x => x.id === id);
+      if (r) _fillRuleForm(r, id);
+    });
     row.querySelectorAll('[data-act]').forEach(b => b.addEventListener('click', async () => {
       if (b.dataset.act === 'del') {
         await fetch(`/api/automations/${id}`, { method: 'DELETE' });
@@ -1204,12 +1508,13 @@ async function _addRule() {
     action: document.getElementById('rule-action')?.dataset.value,
     action_arg: document.getElementById('rule-action-arg')?.value.trim() || '',
   };
-  const r = await fetch('/api/automations', {
-    method: 'POST', headers: { 'content-type': 'application/json' },
+  const editing = _editingRule;
+  const r = await fetch(editing ? `/api/automations/${editing}` : '/api/automations', {
+    method: editing ? 'PATCH' : 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
   });
-  if (!r.ok) { toast((await r.json()).detail || 'failed to add rule', 'error'); return; }
-  ['rule-name', 'rule-trigger-arg', 'rule-action-arg'].forEach(id => { const e = document.getElementById(id); if (e) e.value = ''; });
-  toast('rule added — it runs automatically from now on', 'success');
+  if (!r.ok) { toast((await r.json().catch(() => ({}))).detail || 'failed to save rule', 'error'); return; }
+  _resetRuleForm();
+  toast(editing ? 'rule updated' : 'rule added — it runs automatically from now on', 'success');
   _renderRules();
 }

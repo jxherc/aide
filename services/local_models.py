@@ -249,6 +249,47 @@ async def hwfit() -> dict:
     return {"hardware": hw, "presets": presets}
 
 
+# ── real hardware-aware catalog (hwfit / llmfit engine) ────────────────────────
+# the 6 PRESETS above are the legacy fallback; this is the 900+ model catalog
+# scored against detected hardware (bandwidth/VRAM/quant/MoE aware).
+
+# the hardware probe shells out (nvidia-smi / wmi / rocminfo) — cache it briefly
+# so the cookbook's rapid search/sort/filter calls don't re-probe every keystroke.
+# hardware barely changes; a short TTL still picks up a plugged-in GPU eventually.
+_sys_cache: dict | None = None
+_sys_cache_at: float = 0.0
+_SYS_TTL = 60
+
+
+def detect_system_info(refresh: bool = False) -> dict:
+    global _sys_cache, _sys_cache_at
+    now = time.time()
+    if refresh or _sys_cache is None or now - _sys_cache_at > _SYS_TTL:
+        from services.hwfit import hardware
+        _sys_cache = hardware.detect_system()
+        _sys_cache_at = now
+    return _sys_cache
+
+
+def _short_name(name: str) -> str:
+    return (name or "").split("/")[-1].lower()
+
+
+async def model_catalog(use_case=None, search=None, sort="score", quant=None,
+                        target_context=None, fit_only=False, limit=60) -> dict:
+    from services.hwfit import fit
+    sysinfo = detect_system_info()
+    rows = fit.rank_models(sysinfo, use_case=use_case, limit=limit, search=search,
+                           sort=sort, quant=quant, target_context=target_context,
+                           fit_only=fit_only)
+    # flag rows we've already pulled in ollama (best-effort name match)
+    installed = set(await installed_models())
+    inst_short = {_short_name(m) for m in installed}
+    for r in rows:
+        r["installed"] = _short_name(r.get("name", "")) in inst_short or r.get("name", "").lower() in installed
+    return {"system": sysinfo, "models": rows, "count": len(rows)}
+
+
 def _validate_model(model: str) -> str:
     model = (model or "").strip()
     preset_models = {p["model"] for p in PRESETS}
