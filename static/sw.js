@@ -96,8 +96,8 @@ self.addEventListener('fetch', e => {
 self.addEventListener('push', e => {
   let data = {};
   try { data = e.data.json(); }
-  catch { data = { title: 'alles', body: e.data ? e.data.text() : '' }; }
-  e.waitUntil(self.registration.showNotification(data.title || 'alles', {
+  catch { data = { title: 'aide', body: e.data ? e.data.text() : '' }; }
+  e.waitUntil(self.registration.showNotification(data.title || 'aide', {
     body: data.body || '',
     icon: '/static/icons/icon-192.png',
     badge: '/static/icons/icon-192.png',

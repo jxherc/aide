@@ -1,7 +1,7 @@
 {
-  "name": "alles",
-  "short_name": "alles",
-  "description": "your everything-app, self-hosted",
+  "name": "aide",
+  "short_name": "aide",
+  "description": "your own AI, self-hosted",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0a0a0a",
