@@ -29,6 +29,7 @@ def agent_files(q: str = "", session_id: str = "", limit: int = 30):
     """workspace files for @-mention autocomplete"""
     from services.agent_tools import workspace_files
     from core.database import SessionLocal, Session as Sess
+
     cwd = ""
     if session_id:
         db = SessionLocal()
@@ -50,8 +51,18 @@ async def status():
     return await agent_status()
 
 
-_RUN_LITE = ("id", "session_id", "model", "cwd", "status", "turn", "max_turns",
-             "started_at", "finished_at", "updated_at")
+_RUN_LITE = (
+    "id",
+    "session_id",
+    "model",
+    "cwd",
+    "status",
+    "turn",
+    "max_turns",
+    "started_at",
+    "finished_at",
+    "updated_at",
+)
 
 
 @router.get("/agent/runs")
@@ -66,9 +77,13 @@ def runs(limit: int = 20, summary: bool = False):
         lite["steps"] = len(r.get("tool_steps", []) or [])
         lite["edits"] = len(r.get("checkpoints", []) or [])
         todos = r.get("todos", []) or []
-        lite["todo"] = next((t.get("text") or t.get("title") for t in todos if isinstance(t, dict)), "")
+        lite["todo"] = next(
+            (t.get("text") or t.get("title") for t in todos if isinstance(t, dict)), ""
+        )
         lite["todos_total"] = len(todos)
-        lite["todos_done"] = sum(1 for t in todos if isinstance(t, dict) and t.get("status") == "done")
+        lite["todos_done"] = sum(
+            1 for t in todos if isinstance(t, dict) and t.get("status") == "done"
+        )
         out.append(lite)
     return out
 
@@ -84,6 +99,7 @@ def active_run(session_id: str = ""):
 def incomplete_runs(limit: int = 20):
     """runs that didn't finish cleanly (still running, or interrupted by a restart)."""
     from services.agent_state import list_incomplete
+
     return list_incomplete(limit)
 
 
@@ -95,10 +111,30 @@ def run_detail(run_id: str):
     return run
 
 
+@router.get("/agent/runs/{run_id}/events")
+def run_events(run_id: str, since: int = 0):
+    """durable tail of a run's events for reconnect — events after `since`, plus the
+    accumulated prose + live status so a client that reloaded can resume showing progress (10b)."""
+    run = get_run(run_id)
+    if not run:
+        raise HTTPException(404, "agent run not found")
+    events = run.get("events", []) or []
+    since = max(0, since)
+    return {
+        "events": events[since:],
+        "next": len(events),
+        "status": run.get("status"),
+        "text": run.get("text", ""),
+        "turn": run.get("turn", 0),
+        "done": run.get("status") not in ("running",),
+    }
+
+
 @router.get("/agent/runs/{run_id}/sources")
 def run_sources(run_id: str):
     """provenance for a run — files touched, urls fetched, searches, commands."""
     from services.agent_state import run_sources as _sources
+
     if not get_run(run_id):
         raise HTTPException(404, "agent run not found")
     return _sources(run_id)

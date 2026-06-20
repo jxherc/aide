@@ -2,6 +2,7 @@
 MCP server management — store configs, connect/disconnect, list tools.
 Actual MCP protocol calls use the `mcp` package if available.
 """
+
 import json, logging
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -14,22 +15,22 @@ router = APIRouter(prefix="/api")
 log = logging.getLogger("aide.mcp")
 
 # in-memory connected sessions
-_sessions: dict[str, object] = {}   # server_id -> mcp ClientSession
-_tools: dict[str, list] = {}        # server_id -> [{name, description, schema}]
-_stacks: dict[str, object] = {}     # server_id -> AsyncExitStack
+_sessions: dict[str, object] = {}  # server_id -> mcp ClientSession
+_tools: dict[str, list] = {}  # server_id -> [{name, description, schema}]
+_stacks: dict[str, object] = {}  # server_id -> AsyncExitStack
 
 
 def _fmt(s: McpServer) -> dict:
     return {
-        "id":         s.id,
-        "name":       s.name,
-        "transport":  s.transport,
-        "command":    s.command,
-        "args":       s.args_list(),
-        "url":        s.url,
-        "enabled":    s.enabled,
-        "connected":  s.id in _sessions,
-        "tools":      _tools.get(s.id, []),
+        "id": s.id,
+        "name": s.name,
+        "transport": s.transport,
+        "command": s.command,
+        "args": s.args_list(),
+        "url": s.url,
+        "enabled": s.enabled,
+        "connected": s.id in _sessions,
+        "tools": _tools.get(s.id, []),
         "disabled_tools": s.disabled_tools_list(),
     }
 
@@ -42,10 +43,83 @@ def list_servers(db: DbSession = Depends(get_db)):
 
 class AddServer(BaseModel):
     name: str
-    transport: str = "stdio"   # stdio | sse
+    transport: str = "stdio"  # stdio | sse
     command: str = ""
     args: list[str] = []
     url: str = ""
+
+
+# 10d — one-click connector presets (curated; args interpolate {placeholders} from params)
+MCP_PRESETS = [
+    {
+        "id": "filesystem",
+        "name": "Filesystem",
+        "transport": "stdio",
+        "command": "npx",
+        "args": ["-y", "@modelcontextprotocol/server-filesystem", "{root}"],
+        "description": "Read/write files under a folder (set {root}).",
+    },
+    {
+        "id": "github",
+        "name": "GitHub",
+        "transport": "stdio",
+        "command": "npx",
+        "args": ["-y", "@modelcontextprotocol/server-github"],
+        "description": "GitHub repos, issues, PRs — needs GITHUB_TOKEN in the environment.",
+    },
+    {
+        "id": "brave",
+        "name": "Brave Search",
+        "transport": "stdio",
+        "command": "npx",
+        "args": ["-y", "@modelcontextprotocol/server-brave-search"],
+        "description": "Web search — needs BRAVE_API_KEY.",
+    },
+    {
+        "id": "sqlite",
+        "name": "SQLite",
+        "transport": "stdio",
+        "command": "npx",
+        "args": ["-y", "@modelcontextprotocol/server-sqlite", "{db_path}"],
+        "description": "Query a local SQLite database (set {db_path}).",
+    },
+    {
+        "id": "fetch",
+        "name": "Fetch",
+        "transport": "stdio",
+        "command": "npx",
+        "args": ["-y", "@modelcontextprotocol/server-fetch"],
+        "description": "Fetch and read web pages as markdown.",
+    },
+]
+
+
+@router.get("/mcp/presets")
+def list_presets():
+    return MCP_PRESETS
+
+
+class PresetParams(BaseModel):
+    params: dict = {}
+
+
+@router.post("/mcp/presets/{preset_id}")
+async def add_preset(preset_id: str, body: PresetParams = None, db: DbSession = Depends(get_db)):
+    p = next((x for x in MCP_PRESETS if x["id"] == preset_id), None)
+    if not p:
+        raise HTTPException(404, "unknown preset")
+    params = (body.params if body else {}) or {}
+
+    def _fill(a):
+        try:
+            return a.format(**params)
+        except (KeyError, IndexError):
+            return a  # leave unknown placeholders for the user to edit
+
+    args = [_fill(a) for a in p["args"]]
+    return await add_server(
+        AddServer(name=p["name"], transport=p["transport"], command=p["command"], args=args), db
+    )
 
 
 # POST /api/mcp/servers
@@ -118,6 +192,7 @@ async def call_tool(body: ToolCall):
 
 # ── internal connect/disconnect ───────────────────────────────────────────────
 
+
 async def _connect(server_id: str, db) -> tuple[bool, str]:
     s = db.get(McpServer, server_id)
     if not s:
@@ -133,6 +208,7 @@ async def _connect(server_id: str, db) -> tuple[bool, str]:
             # we store the context manager — connect lazily when tools needed
             # for now just probe by connecting + listing tools
             from contextlib import AsyncExitStack
+
             stack = AsyncExitStack()
             read, write = await stack.enter_async_context(stdio_client(params))
             session = await stack.enter_async_context(ClientSession(read, write))

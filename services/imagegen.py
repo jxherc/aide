@@ -4,6 +4,7 @@ de-facto standard — real OpenAI, plus most openai-compatible + local diffusion
 servers speak it). returns raw PNG bytes; the caller drops them in the gallery.
 providers that don't do images just error clearly.
 """
+
 import base64
 import re
 import httpx
@@ -13,7 +14,7 @@ import httpx
 # broad on purpose ("all the possible ones"): covers the common families across
 # OpenAI, Google, and the OSS/local diffusion world. a custom id can still be typed.
 _IMAGE_RE = re.compile(
-    r"dall-?e|gpt-image|imagen|image-?gen|"
+    r"dall-?e|gpt-image|\bsora\b|imagen|image-?gen|"
     r"stable-?diffusion|sdxl|\bsd[-_ ]?(?:xl|3|3\.5|2|1\.5|turbo)\b|"
     r"flux|playground-v|kandinsky|kolors|hunyuan-?(?:image|dit)|qwen-?image|"
     r"recraft|ideogram|seedream|seededit|aura-?flow|pixart|cogview|janus|"
@@ -44,14 +45,19 @@ def _b64_images(data: dict) -> list[bytes]:
     return out
 
 
-async def generate(prompt: str, base_url: str, api_key: str, model: str = "",
-                   size: str = "1024x1024", n: int = 1) -> list[bytes]:
+async def generate(
+    prompt: str, base_url: str, api_key: str, model: str = "", size: str = "1024x1024", n: int = 1
+) -> list[bytes]:
     url = base_url.rstrip("/") + "/v1/images/generations"
     headers = {"content-type": "application/json"}
     if api_key:
         headers["authorization"] = f"Bearer {api_key}"
-    payload = {"prompt": prompt, "n": max(1, min(4, int(n or 1))),
-               "size": size or "1024x1024", "response_format": "b64_json"}
+    payload = {
+        "prompt": prompt,
+        "n": max(1, min(4, int(n or 1))),
+        "size": size or "1024x1024",
+        "response_format": "b64_json",
+    }
     if model:
         payload["model"] = model
 
@@ -68,7 +74,9 @@ async def generate(prompt: str, base_url: str, api_key: str, model: str = "",
             if item.get("url"):
                 try:
                     ir = await c.get(item["url"])
-                    if ir.status_code < 400 and ir.content:   # don't pass an error page off as an image
+                    if (
+                        ir.status_code < 400 and ir.content
+                    ):  # don't pass an error page off as an image
                         out.append(ir.content)
                 except Exception:
                     pass

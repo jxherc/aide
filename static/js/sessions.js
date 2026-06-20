@@ -4,6 +4,7 @@ import { renderProjectFolders, loadProjects, getProjects } from './projects.js';
 import { applyResponsePrivacy, stripEmojis, welcomeEnabled } from './privacy.js';
 import { renderAgentSteps } from './agentview.js';
 import { isIncognitoMode } from './modes.js';
+import { getCurrentEndpoint, getSelected } from './models.js';
 
 let _sessions = { today: [], yesterday: [], earlier: [] };
 let _activeId = null;
@@ -259,10 +260,15 @@ export async function selectSession(id) {
     try {
       window._refreshPersonaBtn?.();
     } catch (e) {}
+    // 10b — if a background agent run is still going for this session, reattach to it
+    import('./bgrun.js').then(m => m.reattach(id)).catch(() => {});
   } catch (e) {
     console.error('selectSession', e);
   }
 }
+
+// let bgrun.js refresh the conversation once a background run finishes
+window._reloadActiveSession = () => { if (_activeId) selectSession(_activeId); };
 
 
 function renderMessages(msgs) {
@@ -281,10 +287,10 @@ function renderMessages(msgs) {
     } else if (m.role === 'assistant') {
       const { row, wrap } = appendAiMsg(m.content, m.meta?.thinking, m.meta?.tool_steps);
       row.dataset.msgId = m.id;
+      const actions = wrap.querySelector('.msg-actions');
       // re-open artifact button from history
       if (m.meta?.artifacts?.length) {
         wrap.dataset.artifacts = JSON.stringify(m.meta.artifacts);
-        const actions = wrap.querySelector('.msg-actions');
         if (actions) {
           const btn = document.createElement('button');
           btn.className = 'act-btn';
@@ -293,10 +299,20 @@ function renderMessages(msgs) {
           actions.appendChild(btn);
         }
       }
+      // branch: fork the chat from this reply into a new session, non-destructively
+      if (actions) {
+        const bb = document.createElement('button');
+        bb.className = 'act-btn msg-branch-btn';
+        bb.textContent = 'branch';
+        bb.title = 'fork a new chat from here (keeps this one)';
+        bb.dataset.msgId = m.id;
+        actions.appendChild(bb);
+      }
     }
   }
-  // wire edit buttons after all messages are rendered
+  // wire edit + branch buttons after all messages are rendered
   _wireEditButtons(container);
+  _wireBranchButtons(container);
   container.scrollTop = container.scrollHeight;
 }
 
@@ -375,6 +391,31 @@ function _makeAiRow() {
   return { row, wrap, body };
 }
 
+
+function _wireBranchButtons(container) {
+  container.querySelectorAll('.msg-branch-btn').forEach(btn => {
+    btn.addEventListener('click', async e => {
+      e.stopPropagation();
+      const msgId = btn.dataset.msgId;
+      if (!msgId || !_activeId) return;
+      btn.disabled = true;
+      try {
+        const r = await fetch(`/api/sessions/${_activeId}/fork`, {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ msg_id: msgId }),
+        });
+        if (!r.ok) throw new Error('fork failed');
+        const ns = await r.json();
+        await loadSessions();      // surface the new branch in the sidebar
+        await selectSession(ns.id);  // and open it
+      } catch {
+        btn.disabled = false;
+        const { toast } = await import('./util.js');
+        toast('couldn\'t branch this chat', 'error');
+      }
+    });
+  });
+}
 
 function _wireEditButtons(container) {
   container.querySelectorAll('.msg-edit-btn').forEach(btn => {
@@ -592,6 +633,20 @@ export async function createSession(model = '', endpointId = '', options = {}) {
   return s;
 }
 
+
+// return the active session id, or lazily create one (so research/docs-ask work on a
+// fresh chat exactly like a normal first message does).
+export async function ensureSession(options = {}) {
+  const existing = getActiveId();
+  if (existing) return existing;
+  const ep = getCurrentEndpoint();
+  if (!ep) { toast('no endpoint configured — add one via the model picker', 'error'); return null; }
+  const model = getSelected()?.model || ep.models?.[0] || '';
+  const s = await createSession(model, ep.id, options);
+  if (!s) { toast('failed to create session', 'error'); return null; }
+  markActive(s.id);
+  return s.id;
+}
 
 export function updateSessionName(id, name) {
   _allSessions.forEach(s => { if (s.id === id) s.name = name; });
